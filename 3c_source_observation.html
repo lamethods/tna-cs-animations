@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Source 3 — observation: a recorded pair-programming session becomes states</title>
+<style>
+  :root{
+    --ink:#1f2328; --muted:#6b7078; --line:#dfe2e6; --faint:#f5f6f7;
+    --a:#1D9E75; --a-bg:#E1F5EE; --a-ink:#085041;
+    --b:#D85A30; --b-bg:#FAECE7; --b-ink:#712B13;
+    --c3:#7F77DD;--c3-bg:#EEEDFE;--c3-ink:#3C3489;
+    --d:#BA7517; --d-bg:#FAEEDA; --d-ink:#633806;
+    --e:#185FA5; --e-bg:#E4EFFA; --e-ink:#0C3A68;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:#fff;color:var(--ink);
+    font-family:"Segoe UI",-apple-system,"Helvetica Neue",Arial,sans-serif}
+  main{max-width:1180px;margin:0 auto;padding:24px 24px 32px}
+  .k-a{--c:var(--a);--c-bg:var(--a-bg);--c-ink:var(--a-ink)}
+  .k-b{--c:var(--b);--c-bg:var(--b-bg);--c-ink:var(--b-ink)}
+  .k-c{--c:var(--c3);--c-bg:var(--c3-bg);--c-ink:var(--c3-ink)}
+  .k-d{--c:var(--d);--c-bg:var(--d-bg);--c-ink:var(--d-ink)}
+  .k-e{--c:var(--e);--c-bg:var(--e-bg);--c-ink:var(--e-ink)}
+
+  #head{display:flex;gap:18px;align-items:center;min-height:56px}
+  #stepNo{flex:none;width:46px;height:46px;border-radius:50%;background:var(--ink);color:#fff;
+    display:grid;place-items:center;font-size:22px;font-weight:700}
+  #head.idle #stepNo{background:#b9bdc3}
+  #stepTitle{font-size:27px;font-weight:700;margin:2px 0 3px}
+  #stepDesc{font-size:19px;color:#3d4248;line-height:1.4;max-width:1060px}
+
+  #stage{margin-top:14px;min-height:440px}
+
+  /* ---- the recording ---- */
+  .rec{display:grid;grid-template-columns:300px 1fr;gap:22px;align-items:start}
+  .screen{border:2px solid var(--ink);border-radius:12px;overflow:hidden}
+  .screen .bar{background:var(--ink);color:#fff;font-size:13px;padding:6px 10px;display:flex;justify-content:space-between}
+  .screen .bar .rc{color:#ff8a6a}
+  .pair{height:150px;background:var(--faint);display:flex;align-items:flex-end;justify-content:center;gap:18px;padding-bottom:8px;position:relative}
+  .fig{display:flex;flex-direction:column;align-items:center;opacity:.4;transition:opacity .4s}
+  .fig.talk{opacity:1}
+  .fig.talk svg{animation:bob .5s ease-in-out infinite alternate}
+  @keyframes bob{from{transform:translateY(0)}to{transform:translateY(-3px)}}
+  .fig .nm{font-size:12px;color:var(--muted);margin-top:3px}
+  .mon{position:absolute;right:10px;bottom:10px;width:92px;height:62px;border:2px solid var(--ink);border-radius:4px;
+    background:#14181d;font-family:"SF Mono",Menlo,monospace;font-size:7px;color:#8be0bb;padding:4px;overflow:hidden;line-height:1.35}
+  .said{border-top:1px solid var(--line);padding:10px 12px;font-size:15px;line-height:1.5;min-height:92px;font-style:italic;color:#3d4248}
+  .said b{font-style:normal;color:var(--muted);font-size:12px;display:block;text-transform:uppercase;letter-spacing:.06em}
+
+  /* ---- timeline ---- */
+  .tlwrap{padding-top:6px}
+  .tlab{font-size:15px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:0 0 8px}
+  .tl{position:relative;height:54px;border:2px solid var(--ink);border-radius:8px;background:repeating-linear-gradient(90deg,#fff 0 39px,var(--faint) 39px 40px);overflow:hidden}
+  .seg{position:absolute;top:0;bottom:0;background:var(--c-bg);border-right:2px solid var(--c);
+    display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:var(--c-ink);
+    opacity:0;transition:opacity .5s;overflow:hidden;white-space:nowrap;padding:0 4px}
+  .seg.on{opacity:1}
+  .play{position:absolute;top:-4px;bottom:-4px;width:3px;background:var(--ink);left:0;transition:left .12s linear}
+  .ticks{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-top:4px}
+  .obs{margin-top:16px}
+  .obsrow{display:flex;align-items:center;gap:12px;margin-bottom:8px;opacity:0;transition:opacity .5s}
+  .obsrow.on{opacity:1}
+  .obsrow .who{font-size:13px;font-weight:700;color:var(--muted);width:86px;flex:none}
+  .mini{position:relative;height:26px;flex:1;border:1px solid var(--line);border-radius:5px;overflow:hidden}
+  .mini .s{position:absolute;top:0;bottom:0;border-right:2px solid var(--c);background:var(--c-bg)}
+
+  #log{display:flex;flex-wrap:wrap;gap:7px;margin-top:14px;min-height:34px}
+  .chip{border:2px solid var(--c);background:var(--c-bg);color:var(--c-ink);border-radius:8px;padding:4px 10px;
+    font-size:15px;font-weight:600;font-family:"SF Mono",Menlo,Consolas,monospace;
+    opacity:0;transform:translateY(-6px);transition:opacity .4s,transform .4s}
+  .chip.on{opacity:1;transform:none}
+
+  #final{opacity:0;transition:opacity .7s;margin-top:16px}
+  #final.on{opacity:1}
+  .args{display:flex;gap:26px;font-size:17px;flex-wrap:wrap}
+  .args b{font-family:"SF Mono",Menlo,Consolas,monospace}
+  .note{margin-top:12px;border-left:4px solid var(--b);background:var(--b-bg);color:var(--b-ink);
+    padding:10px 14px;font-size:17px;border-radius:0 8px 8px 0}
+
+  .controls{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center;margin-top:20px;
+    border-top:1px solid var(--line);padding-top:14px;font-size:14px}
+  .controls button{border:1px solid var(--line);background:#fff;border-radius:7px;padding:6px 13px;font-size:14px;cursor:pointer}
+  .controls button:hover{background:var(--faint)}
+  .dots{display:flex;gap:6px}
+  .dots button{width:11px;height:11px;border-radius:50%;padding:0;border:1px solid #c4c9cf;background:#fff}
+  .dots button[aria-current="step"]{background:var(--ink);border-color:var(--ink)}
+  .slno{color:var(--muted);margin-left:auto}
+  .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+</style>
+</head>
+<body>
+<main>
+  <div id="head" class="idle">
+    <div id="stepNo">1</div>
+    <div>
+      <div id="stepTitle">Observation</div>
+      <div id="stepDesc">Screen capture and think-aloud from a pair debugging a loop. A human watches it back and decides where one state ends. Press Start.</div>
+    </div>
+  </div>
+
+  <div id="stage">
+    <div class="rec">
+      <div class="screen">
+        <div class="bar"><span>session_12 · pair programming</span><span class="rc">● REC</span></div>
+        <div class="pair">
+          <div class="fig" id="figA">
+            <svg width="54" height="80" viewBox="0 0 54 80"><circle cx="27" cy="18" r="13" fill="#3f4b5b"/><path d="M4 80 C4 50 12 38 27 38 C42 38 50 50 50 80 Z" fill="#3f4b5b"/></svg>
+            <div class="nm">Driver</div>
+          </div>
+          <div class="fig" id="figB">
+            <svg width="54" height="80" viewBox="0 0 54 80"><circle cx="27" cy="18" r="13" fill="#8793a3"/><path d="M4 80 C4 50 12 38 27 38 C42 38 50 50 50 80 Z" fill="#8793a3"/></svg>
+            <div class="nm">Navigator</div>
+          </div>
+          <div class="mon" id="mon">for i in range(n):<br>&nbsp;&nbsp;total += a[i]<br>&nbsp;&nbsp;if total &gt; m:<br>&nbsp;&nbsp;&nbsp;&nbsp;break</div>
+        </div>
+        <div class="said" id="said"><b>Think-aloud</b><span id="saidTxt">—</span></div>
+      </div>
+
+      <div class="tlwrap">
+        <p class="tlab">Six minutes of recording</p>
+        <div class="tl" id="tl"><div class="play" id="ph"></div></div>
+        <div class="ticks"><span>0:00</span><span>1:30</span><span>3:00</span><span>4:30</span><span>6:00</span></div>
+
+        <div class="obs" id="obs">
+          <div class="obsrow" id="rowA"><span class="who">Coder A</span><div class="mini" id="miniA"></div></div>
+          <div class="obsrow" id="rowB"><span class="who">Coder B</span><div class="mini" id="miniB"></div></div>
+        </div>
+
+        <div id="log"></div>
+      </div>
+    </div>
+
+    <div id="final">
+      <div class="args">
+        <span>actor = <b>session</b></span><span>order = <b>segment index</b></span><span>state = <b>what the observer judged</b></span>
+      </div>
+      <div class="note">Nothing in the recording says where a state ends. Coder A heard one long stretch of tracing; Coder B split it the moment the bug was named. Same six minutes, different sequences — and no log to appeal to.</div>
+    </div>
+  </div>
+
+  <p class="sr-only" id="caption" aria-live="polite">Press Start to begin.</p>
+
+  <div class="controls">
+    <button id="prev" type="button">‹ Back</button>
+    <button id="play" type="button">Start</button>
+    <button id="next" type="button">Next ›</button>
+    <div class="dots" id="dots" role="group" aria-label="Go to step"></div>
+    <button id="restart" type="button">Restart</button>
+    <label>Speed
+      <select id="speed"><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="1.5">1.5×</option><option value="2">2×</option></select>
+    </label>
+    <label><input type="checkbox" id="auto" checked> Autoplay</label>
+    <label><input type="checkbox" id="loop"> Loop</label>
+    <span class="slno" id="slno"></span>
+  </div>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const NSL = 6;
+let run = 0, paused = false, speed = 1, cur = 1, skipTo = 1, gate = false;
+
+function setBtn(t){ $("play").textContent = t; }
+function wait(ms, token){
+  if (cur < skipTo) return Promise.resolve(token === run);
+  return new Promise(res => {
+    let left = ms, last = performance.now();
+    (function tick(now){
+      if (token !== run) return res(false);
+      if (!paused) left -= (now - last) * speed;
+      last = now;
+      left <= 0 ? res(true) : requestAnimationFrame(tick);
+    })(last);
+  });
+}
+async function slide(n, token, title, desc){
+  if (n > 1 && n > skipTo && !$("auto").checked){
+    paused = true; gate = true; setBtn("Play");
+    if (!await wait(1, token)) return false;
+    gate = false; setBtn("Pause");
+  }
+  cur = n;
+  $("head").classList.remove("idle");
+  $("stepNo").textContent = n;
+  $("stepTitle").textContent = title;
+  $("stepDesc").textContent = desc;
+  $("caption").textContent = title + ". " + desc;
+  $("slno").textContent = n + " / " + NSL;
+  document.querySelectorAll("#dots button").forEach((b,j) => b.setAttribute("aria-current", j+1===n ? "step" : "false"));
+  return true;
+}
+
+/* ---- Coder A's segmentation: [start%, end%, label, kind, who speaking, think-aloud] ---- */
+const SEGS = [
+  [0,  18, "reads_spec",   "a", "B", "“It says the sum stops once we pass the limit… so where is the limit set?”"],
+  [18, 46, "traces_code",  "b", "A", "“Okay, i is zero, total is zero… adding a-zero… still under… next…”"],
+  [46, 62, "spots_bug",    "c", "B", "“Wait. It breaks <em>after</em> adding. That is one too many.”"],
+  [62, 82, "explains",     "d", "A", "“Right — so we have to check before the add, not after it.”"],
+  [82,100, "edits",        "e", "A", "“Moving the condition up… and run it.”"]
+];
+/* Coder B merges reads_spec + traces_code, and splits edits */
+const SEGS_B = [
+  [0,  46, "a"], [46, 62, "c"], [62, 82, "d"], [82, 91, "e"], [91, 100, "b"]
+];
+const STATES = [];
+
+function clearSegs(){ $("tl").querySelectorAll(".seg").forEach(s => s.remove()); }
+function addSeg(i){
+  const [s,e,label,kind] = SEGS[i];
+  const d = document.createElement("div");
+  d.className = "seg k-" + kind;
+  d.style.left = s + "%"; d.style.width = (e - s) + "%";
+  d.textContent = label;
+  $("tl").appendChild(d);
+  requestAnimationFrame(() => d.classList.add("on"));
+  return d;
+}
+async function chip(label, kind, token){
+  STATES.push([label, kind]);
+  const d = document.createElement("div");
+  d.className = "chip k-" + kind;
+  d.textContent = label;
+  $("log").appendChild(d);
+  requestAnimationFrame(() => d.classList.add("on"));
+  return await wait(340, token);
+}
+function setPlayhead(pct){ $("ph").style.left = pct + "%"; }
+function speak(who, txt){
+  $("figA").classList.toggle("talk", who === "A");
+  $("figB").classList.toggle("talk", who === "B");
+  $("saidTxt").innerHTML = txt;
+}
+async function scrub(from, to, ms, token){
+  const t0 = performance.now();
+  return new Promise(res => {
+    (function tick(now){
+      if (token !== run) return res(false);
+      if (!paused){
+        const k = Math.min(1, (now - t0) * speed / ms);
+        setPlayhead(from + (to - from) * k);
+        if (k >= 1) return res(true);
+      }
+      requestAnimationFrame(tick);
+    })(t0);
+  });
+}
+function fillMini(el, rows){
+  el.innerHTML = "";
+  rows.forEach(([s,e,k]) => {
+    const d = document.createElement("div");
+    d.className = "s k-" + k;
+    d.style.left = s + "%"; d.style.width = (e - s) + "%";
+    el.appendChild(d);
+  });
+}
+function reset(){
+  clearSegs(); $("log").innerHTML = ""; STATES.length = 0;
+  setPlayhead(0); speak(null, "—");
+  $("miniA").innerHTML = ""; $("miniB").innerHTML = "";
+  $("rowA").classList.remove("on"); $("rowB").classList.remove("on");
+  $("final").classList.remove("on");
+}
+
+async function play(token){
+  reset();
+
+  if (!await slide(1, token, "Observation",
+      "Six minutes of screen capture and think-aloud: two students debugging a loop that sums one element too many.")) return;
+  if (!await wait(1300, token)) return;
+
+  if (!await slide(2, token, "Watch it back",
+      "There is no log here. Just a recording, playing in real time, with two people talking over it.")) return;
+  speak("B", SEGS[0][5]);
+  if (!await scrub(0, 18, 1500, token)) return;
+  if (!await wait(300, token)) return;
+
+  if (!await slide(3, token, "The observer draws a boundary",
+      "A coder decides that reading the spec has ended and tracing has begun. That decision is the state.")) return;
+  addSeg(0);
+  if (!await wait(500, token)) return;
+  if (!await chip(SEGS[0][2], SEGS[0][3], token)) return;
+  if (!await wait(600, token)) return;
+
+  if (!await slide(4, token, "And again, four more times",
+      "Each segment is bounded by judgement — a shift in what the pair is doing, not an event the machine emitted.")) return;
+  for (let i = 1; i < SEGS.length; i++){
+    speak(SEGS[i][4], SEGS[i][5]);
+    if (!await scrub(SEGS[i][0], SEGS[i][1], 1100, token)) return;
+    addSeg(i);
+    if (!await wait(320, token)) return;
+    if (!await chip(SEGS[i][2], SEGS[i][3], token)) return;
+  }
+  speak(null, "—");
+  if (!await wait(700, token)) return;
+
+  if (!await slide(5, token, "A second coder watches the same tape",
+      "Coder B hears one long stretch of tracing, and splits the ending where A saw one move.")) return;
+  fillMini($("miniA"), SEGS.map(s => [s[0], s[1], s[3]]));
+  $("rowA").classList.add("on");
+  if (!await wait(700, token)) return;
+  fillMini($("miniB"), SEGS_B);
+  $("rowB").classList.add("on");
+  if (!await wait(1600, token)) return;
+
+  if (!await slide(6, token, "One episode, two sequences",
+      "Five states either way — but not the same five, and not in the same places.")) return;
+  $("final").classList.add("on");
+  if (!await wait(2800, token)) return;
+
+  if ($("loop").checked){ go(1); } else { setBtn("Restart"); }
+}
+
+function go(n){
+  if (n < 1) n = 1;
+  if (n > NSL) n = NSL;
+  run++; const token = run;
+  paused = false; gate = false; skipTo = n; cur = 1;
+  setBtn("Pause");
+  play(token).then(() => { if (token === run && !$("loop").checked) setBtn("Restart"); });
+  skipTo = n;
+}
+(function initDots(){
+  const d = $("dots");
+  for (let i = 1; i <= NSL; i++){
+    const b = document.createElement("button");
+    b.type = "button"; b.dataset.n = i; b.setAttribute("aria-label", "Step " + i);
+    d.appendChild(b);
+  }
+})();
+$("dots").addEventListener("click", e => { const b = e.target.closest("button"); if (b) go(+b.dataset.n); });
+$("play").addEventListener("click", () => {
+  if (run === 0){ go(1); return; }
+  if (gate){ paused = false; gate = false; setBtn("Pause"); return; }
+  paused = !paused; setBtn(paused ? "Play" : "Pause");
+});
+$("restart").addEventListener("click", () => go(1));
+$("next").addEventListener("click", () => { if (gate){ paused = false; gate = false; setBtn("Pause"); return; } go(cur + 1); });
+$("prev").addEventListener("click", () => go(cur - 1));
+$("speed").addEventListener("change", e => { speed = parseFloat(e.target.value); });
+document.addEventListener("keydown", e => {
+  if (e.key === "ArrowRight") $("next").click();
+  else if (e.key === "ArrowLeft") $("prev").click();
+  else if (e.key === " "){ e.preventDefault(); $("play").click(); }
+});
+$("slno").textContent = "1 / " + NSL;
+</script>
+</body>
+</html>

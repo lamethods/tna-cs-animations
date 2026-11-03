@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Source 4 — sensors: gaze becomes states only after someone draws the boxes</title>
+<style>
+  :root{
+    --ink:#1f2328; --muted:#6b7078; --line:#dfe2e6; --faint:#f5f6f7;
+    --spec:#1D9E75; --spec-bg:#E1F5EE; --spec-ink:#085041;
+    --code:#185FA5; --code-bg:#E4EFFA; --code-ink:#0C3A68;
+    --err:#D85A30;  --err-bg:#FAECE7;  --err-ink:#712B13;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:#fff;color:var(--ink);
+    font-family:"Segoe UI",-apple-system,"Helvetica Neue",Arial,sans-serif}
+  main{max-width:1180px;margin:0 auto;padding:24px 24px 32px}
+  .k-spec{--c:var(--spec);--c-bg:var(--spec-bg);--c-ink:var(--spec-ink)}
+  .k-code{--c:var(--code);--c-bg:var(--code-bg);--c-ink:var(--code-ink)}
+  .k-err{--c:var(--err);--c-bg:var(--err-bg);--c-ink:var(--err-ink)}
+
+  #head{display:flex;gap:18px;align-items:center;min-height:56px}
+  #stepNo{flex:none;width:46px;height:46px;border-radius:50%;background:var(--ink);color:#fff;
+    display:grid;place-items:center;font-size:22px;font-weight:700}
+  #head.idle #stepNo{background:#b9bdc3}
+  #stepTitle{font-size:27px;font-weight:700;margin:2px 0 3px}
+  #stepDesc{font-size:19px;color:#3d4248;line-height:1.4;max-width:1060px}
+
+  #stage{display:grid;grid-template-columns:1fr 300px;gap:26px;margin-top:14px;min-height:420px}
+
+  /* ---- screen with AOIs ---- */
+  .scr{position:relative;border:2px solid var(--ink);border-radius:12px;overflow:hidden;height:360px;background:#fff}
+  .scr .bar{background:var(--ink);color:#fff;font-size:13px;padding:6px 10px;display:flex;justify-content:space-between}
+  .panes{position:relative;height:326px;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 104px}
+  .pane{border-right:1px solid var(--line);border-bottom:1px solid var(--line);padding:11px 13px;font-size:14px;line-height:1.55;overflow:hidden}
+  .pane .t{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:700;margin-bottom:5px}
+  .pane.mono{font-family:"SF Mono",Menlo,Consolas,monospace;white-space:pre;font-size:13px}
+  .pane.wide{grid-column:1 / -1;border-right:none}
+  .pane.err{background:#FFF8F5}
+  .aoi{position:absolute;border:2px dashed transparent;border-radius:7px;pointer-events:none;
+    transition:border-color .4s,background-color .4s}
+  .aoi.show{border-color:var(--c)}
+  .aoi.lit{background:var(--c-bg)}
+  .aoi .lab{position:absolute;top:-10px;left:8px;font-size:10px;font-weight:700;letter-spacing:.05em;
+    background:#fff;color:var(--c-ink);padding:0 5px;opacity:0;transition:opacity .4s}
+  .aoi.show .lab{opacity:1}
+  #gaze{position:absolute;width:26px;height:26px;border-radius:50%;border:3px solid rgba(31,35,40,.75);
+    background:rgba(31,35,40,.10);margin:-13px 0 0 -13px;transition:left .09s linear,top .09s linear;opacity:0}
+  #gaze.on{opacity:1}
+  .fix{position:absolute;border-radius:50%;background:rgba(31,35,40,.16);border:1px solid rgba(31,35,40,.32);
+    transform:translate(-50%,-50%) scale(.2);opacity:0;
+    transition:transform .45s,opacity .45s,background-color .45s,border-color .45s}
+  .fix.on{transform:translate(-50%,-50%) scale(1);opacity:1}
+  .fix.gone{opacity:.14}
+  .fix .ms{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:10px;font-weight:700;
+    color:#3d4248;opacity:0;transition:opacity .4s}
+  .fix.showms .ms{opacity:1}
+
+  /* ---- dwell control ---- */
+  .dwell{margin-top:16px;border:1px solid var(--line);border-radius:10px;padding:12px 14px;
+    display:flex;align-items:center;gap:16px;opacity:0;transition:opacity .5s}
+  .dwell.on{opacity:1}
+  .dwell .lab{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:700}
+  .scale{position:relative;flex:1;height:30px;border-bottom:2px solid var(--line)}
+  .scale .mk{position:absolute;bottom:-6px;width:1px;height:8px;background:#c4c9cf}
+  .scale .mk span{position:absolute;top:10px;left:50%;transform:translateX(-50%);font-size:11px;color:var(--muted);white-space:nowrap}
+  .scale .knob{position:absolute;bottom:-9px;width:14px;height:14px;border-radius:50%;background:var(--ink);
+    margin-left:-7px;transition:left .6s cubic-bezier(.3,.7,.2,1)}
+  .scale .fill{position:absolute;left:0;bottom:-1px;height:3px;background:var(--ink);transition:width .6s cubic-bezier(.3,.7,.2,1)}
+  .dwell .out{font-size:17px;font-weight:700;min-width:116px;text-align:right}
+  .dwell .out em{font-style:normal;color:var(--muted);font-weight:500;font-size:14px}
+
+  /* ---- side ---- */
+  .side h3{font-size:15px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:0 0 10px}
+  #log{display:flex;flex-direction:column;gap:7px;min-height:220px}
+  .chip{display:flex;align-items:center;gap:9px;border:2px solid var(--c);background:var(--c-bg);color:var(--c-ink);
+    border-radius:10px;padding:6px 11px;font-size:15px;font-weight:600;
+    opacity:0;transform:translateY(-8px);
+    transition:opacity .4s,transform .4s,filter .45s}
+  .chip.on{opacity:1;transform:none}
+  .chip.gone{opacity:.25;filter:grayscale(1)}
+  .chip .n{font-size:12px;color:var(--muted);font-weight:500;min-width:14px}
+  .chip code{font-family:"SF Mono",Menlo,Consolas,monospace;font-size:14px}
+  .chip .ms{margin-left:auto;font-size:12px;color:var(--muted);font-weight:500}
+  .raw{font-family:"SF Mono",Menlo,Consolas,monospace;font-size:12px;color:var(--muted);line-height:1.6;
+    border:1px solid var(--line);border-radius:8px;padding:9px 10px;height:132px;overflow:hidden}
+
+  #final{opacity:0;transition:opacity .7s;margin-top:16px}
+  #final.on{opacity:1}
+  .seq{display:flex;flex-wrap:wrap;align-items:center;gap:7px;font-size:16px}
+  .seq .s{border:2px solid var(--c);background:var(--c-bg);color:var(--c-ink);border-radius:8px;padding:4px 10px;
+    font-family:"SF Mono",Menlo,Consolas,monospace;font-weight:600}
+  .seq .ar{color:var(--muted)}
+  .args{display:flex;gap:26px;margin-top:13px;font-size:17px;flex-wrap:wrap}
+  .args b{font-family:"SF Mono",Menlo,Consolas,monospace}
+  .note{margin-top:12px;border-left:4px solid var(--err);background:var(--err-bg);color:var(--err-ink);
+    padding:10px 14px;font-size:17px;border-radius:0 8px 8px 0}
+
+  .controls{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center;margin-top:20px;
+    border-top:1px solid var(--line);padding-top:14px;font-size:14px}
+  .controls button{border:1px solid var(--line);background:#fff;border-radius:7px;padding:6px 13px;font-size:14px;cursor:pointer}
+  .controls button:hover{background:var(--faint)}
+  .dots{display:flex;gap:6px}
+  .dots button{width:11px;height:11px;border-radius:50%;padding:0;border:1px solid #c4c9cf;background:#fff}
+  .dots button[aria-current="step"]{background:var(--ink);border-color:var(--ink)}
+  .slno{color:var(--muted);margin-left:auto}
+  .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+</style>
+</head>
+<body>
+<main>
+  <div id="head" class="idle">
+    <div id="stepNo">1</div>
+    <div>
+      <div id="stepTitle">Sensors</div>
+      <div id="stepDesc">An eye tracker, while a student works out why one test fails. The signal is continuous — there are no states in it yet. Press Start.</div>
+    </div>
+  </div>
+
+  <div id="stage">
+    <div>
+      <div class="scr" id="scr">
+        <div class="bar"><span>eye tracker · 60 Hz</span><span id="clk">00:00</span></div>
+        <div class="panes">
+          <div class="pane"><div class="t">Problem statement</div>Return the index of the first
+element whose running total
+exceeds the limit, or −1 if
+the total never exceeds it.</div>
+          <div class="pane mono"><div class="t">main.py</div>for i in range(n):
+    total += a[i]
+    if total &gt; m:
+        break
+return i</div>
+          <div class="pane wide err"><div class="t">Failing test</div><span style="font-family:'SF Mono',Menlo,monospace;font-size:12.5px">AssertionError: expected -1, got 4<br>case: a=[1,1,1], m=99</span></div>
+        </div>
+        <div class="aoi k-spec" id="aoiSpec"><span class="lab">spec</span></div>
+        <div class="aoi k-code" id="aoiCode"><span class="lab">code</span></div>
+        <div class="aoi k-err"  id="aoiErr"><span class="lab">error</span></div>
+        <div id="gaze"></div>
+      </div>
+
+      <div class="dwell" id="dwell">
+        <span class="lab">Minimum dwell</span>
+        <div class="scale" id="scale">
+          <div class="fill" id="dFill"></div><div class="knob" id="dKnob"></div>
+        </div>
+        <span class="out"><span id="dMs">200</span> ms<br><em><span id="dN">6</span> states</em></span>
+      </div>
+    </div>
+
+    <div class="side">
+      <h3>Raw signal</h3>
+      <div class="raw" id="raw"></div>
+      <h3 style="margin-top:14px">States</h3>
+      <div id="log"></div>
+    </div>
+  </div>
+
+  <div id="final">
+    <div class="seq" id="seq"></div>
+    <div class="args">
+      <span>actor = <b>participant</b></span><span>order = <b>fixation index</b></span><span>state = <b>area of interest</b></span>
+    </div>
+    <div class="note">A gaze coordinate is not a state. It becomes one only once somebody draws the boxes and decides how long counts as looking — and at a high enough minimum, the quick glances back at the error message stop existing altogether.</div>
+  </div>
+
+  <p class="sr-only" id="caption" aria-live="polite">Press Start to begin.</p>
+
+  <div class="controls">
+    <button id="prev" type="button">‹ Back</button>
+    <button id="play" type="button">Start</button>
+    <button id="next" type="button">Next ›</button>
+    <div class="dots" id="dots" role="group" aria-label="Go to step"></div>
+    <button id="restart" type="button">Restart</button>
+    <label>Speed
+      <select id="speed"><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="1.5">1.5×</option><option value="2">2×</option></select>
+    </label>
+    <label><input type="checkbox" id="auto" checked> Autoplay</label>
+    <label><input type="checkbox" id="loop"> Loop</label>
+    <span class="slno" id="slno"></span>
+  </div>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const NSL = 6;
+let run = 0, paused = false, speed = 1, cur = 1, skipTo = 1, gate = false;
+
+function setBtn(t){ $("play").textContent = t; }
+function wait(ms, token){
+  if (cur < skipTo) return Promise.resolve(token === run);
+  return new Promise(res => {
+    let left = ms, last = performance.now();
+    (function tick(now){
+      if (token !== run) return res(false);
+      if (!paused) left -= (now - last) * speed;
+      last = now;
+      left <= 0 ? res(true) : requestAnimationFrame(tick);
+    })(last);
+  });
+}
+async function slide(n, token, title, desc){
+  if (n > 1 && n > skipTo && !$("auto").checked){
+    paused = true; gate = true; setBtn("Play");
+    if (!await wait(1, token)) return false;
+    gate = false; setBtn("Pause");
+  }
+  cur = n;
+  $("head").classList.remove("idle");
+  $("stepNo").textContent = n;
+  $("stepTitle").textContent = title;
+  $("stepDesc").textContent = desc;
+  $("caption").textContent = title + ". " + desc;
+  $("slno").textContent = n + " / " + NSL;
+  document.querySelectorAll("#dots button").forEach((b,j) => b.setAttribute("aria-current", j+1===n ? "step" : "false"));
+  return true;
+}
+
+/* ---- AOI geometry, in % of the screen box ---- */
+const AOIS = {
+  spec: {el:"aoiSpec", x:2,  y:11, w:46, h:57, kind:"spec"},
+  code: {el:"aoiCode", x:50, y:11, w:48, h:57, kind:"code"},
+  err:  {el:"aoiErr",  x:2,  y:70, w:96, h:27, kind:"err"}
+};
+(function placeAOIs(){
+  for (const k in AOIS){
+    const a = AOIS[k], e = $(a.el);
+    e.style.left = a.x + "%"; e.style.top = a.y + "%";
+    e.style.width = a.w + "%"; e.style.height = a.h + "%";
+  }
+})();
+
+/* ---- the scanpath: [aoi, x%, y%, dwell ms] ---- */
+const PATH = [
+  ["spec", 22, 30,  520],
+  ["code", 70, 26,  980],
+  ["err",  36, 84,  350],
+  ["code", 66, 42, 1150],
+  ["spec", 26, 44,  760],
+  ["err",  58, 86,  290]
+];
+const FIX = [];   /* {aoi, dwell, chip, dot} */
+let rawLines = 0;
+
+function gazeTo(xp, yp){
+  const g = $("gaze"); g.classList.add("on");
+  g.style.left = xp + "%"; g.style.top = yp + "%";
+}
+function dropFix(xp, yp, dwell){
+  const d = document.createElement("div");
+  d.className = "fix";
+  const r = 16 + dwell / 42;
+  d.style.left = xp + "%"; d.style.top = yp + "%";
+  d.style.width = r + "px"; d.style.height = r + "px";
+  d.innerHTML = '<span class="ms">' + dwell + '</span>';
+  $("scr").appendChild(d);
+  requestAnimationFrame(() => d.classList.add("on"));
+  return d;
+}
+function rawLine(t, x, y){
+  if (rawLines > 6){ $("raw").innerHTML = ""; rawLines = 0; }
+  $("raw").insertAdjacentHTML("beforeend",
+    t.toFixed(2) + "&nbsp;s&nbsp;&nbsp;x=" + x + "&nbsp;&nbsp;y=" + y + "<br>");
+  rawLines++;
+}
+async function chip(aoi, dwell, token){
+  const d = document.createElement("div");
+  d.className = "chip k-" + AOIS[aoi].kind;
+  d.innerHTML = '<span class="n">' + (FIX.length + 1) + '</span><code>' + aoi +
+                '</code><span class="ms">' + dwell + ' ms</span>';
+  $("log").appendChild(d);
+  requestAnimationFrame(() => d.classList.add("on"));
+  return d;
+}
+function showAOIs(on){ for (const k in AOIS) $(AOIS[k].el).classList.toggle("show", on); }
+function litAOI(k){ for (const j in AOIS) $(AOIS[j].el).classList.toggle("lit", j === k); }
+
+/* ---- the dwell minimum ---- */
+const DMIN = 150, DMAX = 1250;
+function setDwell(ms){
+  const pct = (ms - DMIN) / (DMAX - DMIN) * 100;
+  $("dKnob").style.left = pct + "%";
+  $("dFill").style.width = pct + "%";
+  $("dMs").textContent = ms;
+  let kept = 0;
+  FIX.forEach(f => {
+    const out = f.dwell < ms;
+    f.chip.classList.toggle("gone", out);
+    f.dot.classList.toggle("gone", out);
+    if (!out){ kept++; f.chip.querySelector(".n").textContent = kept; }
+    else f.chip.querySelector(".n").textContent = "–";
+  });
+  $("dN").textContent = kept;
+  return kept;
+}
+function keptSeq(ms){ return FIX.filter(f => f.dwell >= ms); }
+
+function reset(){
+  $("log").innerHTML = ""; $("raw").innerHTML = ""; FIX.length = 0; rawLines = 0;
+  $("scr").querySelectorAll(".fix").forEach(f => f.remove());
+  $("gaze").classList.remove("on"); showAOIs(false); litAOI(null);
+  $("dwell").classList.remove("on");
+  $("final").classList.remove("on"); $("seq").innerHTML = "";
+  $("clk").textContent = "00:00";
+  $("dKnob").style.left = "0%"; $("dFill").style.width = "0%";
+  $("dMs").textContent = "200"; $("dN").textContent = "6";
+}
+
+(function initScale(){
+  const s = $("scale");
+  [150, 400, 700, 1000, 1250].forEach(v => {
+    const m = document.createElement("div");
+    m.className = "mk";
+    m.style.left = ((v - DMIN) / (DMAX - DMIN) * 100) + "%";
+    m.innerHTML = '<span>' + v + '</span>';
+    s.appendChild(m);
+  });
+})();
+
+async function play(token){
+  reset();
+
+  if (!await slide(1, token, "Sensors",
+      "An eye tracker at 60 Hz, while a student works out why one test fails.")) return;
+  if (!await wait(1200, token)) return;
+
+  if (!await slide(2, token, "What the sensor actually emits",
+      "A pair of coordinates, sixty times a second. Not one of these rows is a state.")) return;
+  gazeTo(PATH[0][1], PATH[0][2]);
+  for (let i = 0; i < 26; i++){
+    const k = i / 25;
+    gazeTo(20 + Math.sin(i / 2.2) * 26 + k * 14, 28 + Math.cos(i / 3.1) * 14 + k * 10);
+    rawLine(i * .017, 440 + Math.round(Math.sin(i) * 90), 300 + Math.round(Math.cos(i) * 50));
+    $("clk").textContent = "00:" + String(Math.floor(i * .6)).padStart(2, "0");
+    if (!await wait(70, token)) return;
+  }
+  if (!await wait(600, token)) return;
+
+  if (!await slide(3, token, "Somebody draws the areas of interest",
+      "Three regions: the problem statement, the code, the failing test. Where they go, and how many there are, is a decision — not a property of the data.")) return;
+  showAOIs(true);
+  if (!await wait(1500, token)) return;
+
+  if (!await slide(4, token, "A dwell inside a region becomes a state",
+      "The gaze settles, and the circle grows with how long it stayed. Six visits, in order.")) return;
+  let t = 26;
+  for (const [aoi, xp, yp, dwell] of PATH){
+    gazeTo(xp, yp); litAOI(aoi);
+    if (!await wait(240, token)) return;
+    const dot = dropFix(xp, yp, dwell);
+    for (let i = 0; i < 5; i++, t++){
+      rawLine(t * .017, 400 + Math.round(Math.sin(t) * 110), 280 + Math.round(Math.cos(t) * 60));
+      $("clk").textContent = "00:" + String(Math.floor(t * .6)).padStart(2, "0");
+      if (!await wait(55, token)) return;
+    }
+    const c = await chip(aoi, dwell, token);
+    FIX.push({aoi, dwell, chip:c, dot});
+    if (!await wait(300, token)) return;
+  }
+  litAOI(null); $("gaze").classList.remove("on");
+  if (!await wait(600, token)) return;
+
+  if (!await slide(5, token, "How long counts as looking?",
+      "Nothing in the signal answers that. Raise the minimum and visits stop qualifying — the short glances back at the error go first.")) return;
+  $("dwell").classList.add("on");
+  FIX.forEach(f => f.dot.classList.add("showms"));
+  setDwell(200);
+  if (!await wait(1100, token)) return;
+  for (const v of [400, 700, 1000, 400]){
+    const kept = setDwell(v);
+    $("caption").textContent = "A minimum dwell of " + v + " ms leaves " + kept + " states.";
+    if (!await wait(1250, token)) return;
+  }
+  if (!await wait(400, token)) return;
+
+  if (!await slide(6, token, "One recording, any number of sequences",
+      "Four states at this setting — but only because of where the boxes went and how long a look had to last.")) return;
+  $("seq").innerHTML = keptSeq(400).map((f,i) =>
+    (i ? '<span class="ar">→</span>' : '') +
+    '<span class="s k-' + AOIS[f.aoi].kind + '">' + f.aoi + '</span>').join("");
+  $("final").classList.add("on");
+  if (!await wait(2900, token)) return;
+
+  if ($("loop").checked){ go(1); } else { setBtn("Restart"); }
+}
+
+function go(n){
+  if (n < 1) n = 1;
+  if (n > NSL) n = NSL;
+  run++; const token = run;
+  paused = false; gate = false; skipTo = n; cur = 1;
+  setBtn("Pause");
+  play(token).then(() => { if (token === run && !$("loop").checked) setBtn("Restart"); });
+  skipTo = n;
+}
+(function initDots(){
+  const d = $("dots");
+  for (let i = 1; i <= NSL; i++){
+    const b = document.createElement("button");
+    b.type = "button"; b.dataset.n = i; b.setAttribute("aria-label", "Step " + i);
+    d.appendChild(b);
+  }
+})();
+$("dots").addEventListener("click", e => { const b = e.target.closest("button"); if (b) go(+b.dataset.n); });
+$("play").addEventListener("click", () => {
+  if (run === 0){ go(1); return; }
+  if (gate){ paused = false; gate = false; setBtn("Pause"); return; }
+  paused = !paused; setBtn(paused ? "Play" : "Pause");
+});
+$("restart").addEventListener("click", () => go(1));
+$("next").addEventListener("click", () => { if (gate){ paused = false; gate = false; setBtn("Pause"); return; } go(cur + 1); });
+$("prev").addEventListener("click", () => go(cur - 1));
+$("speed").addEventListener("change", e => { speed = parseFloat(e.target.value); });
+document.addEventListener("keydown", e => {
+  if (e.key === "ArrowRight") $("next").click();
+  else if (e.key === "ArrowLeft") $("prev").click();
+  else if (e.key === " "){ e.preventDefault(); $("play").click(); }
+});
+$("slno").textContent = "1 / " + NSL;
+</script>
+</body>
+</html>

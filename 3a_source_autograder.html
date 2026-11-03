@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Source 1 — automated assessment: runs, submissions, and the edits in between</title>
+<style>
+  :root{
+    --ink:#1f2328; --muted:#6b7078; --line:#dfe2e6; --faint:#f5f6f7;
+    --ok:#1D9E75;  --ok-bg:#E1F5EE;  --ok-ink:#085041;
+    --err:#D85A30; --err-bg:#FAECE7; --err-ink:#712B13;
+    --sub:#7F77DD; --sub-bg:#EEEDFE; --sub-ink:#3C3489;
+    --pass:#BA7517;--pass-bg:#FAEEDA;--pass-ink:#633806;
+    --ed:#2F7D8C;  --ed-bg:#E2F1F4;  --ed-ink:#123F49;
+    --ghost:#9aa0a7;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:#fff;color:var(--ink);
+    font-family:"Segoe UI",-apple-system,"Helvetica Neue",Arial,sans-serif}
+  main{max-width:1180px;margin:0 auto;padding:24px 24px 32px}
+  .k-ok{--c:var(--ok);--c-bg:var(--ok-bg);--c-ink:var(--ok-ink)}
+  .k-err{--c:var(--err);--c-bg:var(--err-bg);--c-ink:var(--err-ink)}
+  .k-sub{--c:var(--sub);--c-bg:var(--sub-bg);--c-ink:var(--sub-ink)}
+  .k-pass{--c:var(--pass);--c-bg:var(--pass-bg);--c-ink:var(--pass-ink)}
+  .k-ed{--c:var(--ed);--c-bg:var(--ed-bg);--c-ink:var(--ed-ink)}
+
+  #head{display:flex;gap:18px;align-items:center;min-height:56px}
+  #stepNo{flex:none;width:46px;height:46px;border-radius:50%;background:var(--ink);color:#fff;
+    display:grid;place-items:center;font-size:22px;font-weight:700}
+  #head.idle #stepNo{background:#b9bdc3}
+  #stepTitle{font-size:27px;font-weight:700;margin:2px 0 3px}
+  #stepDesc{font-size:19px;color:#3d4248;line-height:1.4;max-width:1060px}
+
+  #stage{display:grid;grid-template-columns:1fr 320px;gap:26px;margin-top:14px;min-height:430px}
+
+  /* ---- the IDE ---- */
+  .ide{border:2px solid var(--ink);border-radius:12px;overflow:hidden;display:flex;flex-direction:column;height:430px}
+  .ide .bar{display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--ink);color:#fff;font-size:14px}
+  .ide .bar .dot{width:10px;height:10px;border-radius:50%;background:#5a6472}
+  .ide .bar b{font-weight:600;letter-spacing:.3px}
+  .ide .body{display:grid;grid-template-columns:132px 1fr;flex:1;min-height:0}
+  .exlist{border-right:1px solid var(--line);background:var(--faint);padding:10px 0;font-size:14px}
+  .exlist div{padding:6px 14px;color:var(--muted)}
+  .exlist div.on{color:var(--ink);font-weight:600;background:#fff;border-left:3px solid var(--ink)}
+  .editor{display:flex;flex-direction:column;min-height:0;position:relative}
+  .code{flex:1;padding:11px 14px;font-family:"SF Mono",Menlo,Consolas,monospace;font-size:14.5px;line-height:1.62;
+    overflow:hidden;position:relative}
+  .cl{white-space:pre;transition:background-color .7s}
+  .cl .ln{color:#c2c7cd;display:inline-block;width:24px;user-select:none}
+  .cl.hot{background:#FFF6D8}
+  .cl.fresh{background:#E2F1F4}
+  .caret{display:inline-block;width:2px;height:1em;background:var(--ink);vertical-align:-2px;animation:bl .9s step-end infinite}
+  @keyframes bl{50%{opacity:0}}
+  #ghosts{position:absolute;right:10px;top:8px;display:flex;flex-direction:column;gap:6px;align-items:flex-end;z-index:3}
+  .ghost{font-size:12.5px;color:var(--ghost);border:1px dashed var(--ghost);border-radius:999px;padding:2px 10px;
+    background:#fff;opacity:0;transform:translateX(8px);transition:opacity .4s,transform .4s}
+  .ghost.on{opacity:1;transform:none}
+  .ghost.gone{opacity:0}
+  .btns{display:flex;gap:10px;padding:9px 14px;border-top:1px solid var(--line);align-items:center}
+  .btn{border:2px solid var(--ink);border-radius:8px;padding:5px 13px;font-size:14.5px;font-weight:600;background:#fff;
+    transition:background-color .25s,color .25s,transform .15s}
+  .btn.hit{background:var(--ink);color:#fff;transform:scale(.96)}
+  .console{border-top:1px solid var(--line);background:#14181d;color:#d7dde3;padding:9px 14px;height:92px;
+    font-family:"SF Mono",Menlo,Consolas,monospace;font-size:13.5px;line-height:1.5;overflow:hidden}
+  .console .e{color:#ff9b7a}
+  .console .g{color:#8be0bb}
+
+  /* ---- the log ---- */
+  .side h3{font-size:15px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:0 0 10px}
+  .side h3 em{font-style:normal;text-transform:none;letter-spacing:0;color:var(--ghost);font-weight:400}
+  #log{display:flex;flex-direction:column;gap:7px;min-height:200px}
+  .chip{display:flex;align-items:center;gap:9px;border:2px solid var(--c);background:var(--c-bg);color:var(--c-ink);
+    border-radius:10px;padding:7px 11px;font-size:15px;font-weight:600;
+    opacity:0;transform:translateY(-9px);transition:opacity .45s,transform .45s}
+  .chip.on{opacity:1;transform:none}
+  .chip .n{font-size:12px;color:var(--muted);font-weight:500;min-width:14px}
+  .chip code{font-family:"SF Mono",Menlo,Consolas,monospace;font-size:14px}
+  .chip .hash{margin-left:auto;font-family:"SF Mono",Menlo,Consolas,monospace;font-size:11.5px;color:var(--muted);
+    opacity:0;transition:opacity .45s}
+  .chip.showh .hash{opacity:1}
+  .gapnote{font-size:12.5px;color:var(--ghost);border-left:2px dashed var(--ghost);margin-left:12px;padding:3px 0 3px 10px;
+    opacity:0;transition:opacity .45s}
+  .gapnote.on{opacity:1}
+
+  /* ---- final strip ---- */
+  #final{opacity:0;transition:opacity .7s;margin-top:16px}
+  #final.on{opacity:1}
+  .seq{display:flex;flex-wrap:wrap;align-items:center;gap:7px;font-size:16px;min-height:38px}
+  .seq .s{border:2px solid var(--c);background:var(--c-bg);color:var(--c-ink);border-radius:8px;padding:4px 10px;
+    font-family:"SF Mono",Menlo,Consolas,monospace;font-weight:600}
+  .seq .s.pop{animation:pop .5s}
+  @keyframes pop{from{transform:scale(.6);opacity:0}to{transform:scale(1);opacity:1}}
+  .seq .ar{color:var(--muted)}
+  .args{display:flex;gap:26px;margin-top:13px;font-size:17px;flex-wrap:wrap}
+  .args b{font-family:"SF Mono",Menlo,Consolas,monospace}
+  .note{margin-top:12px;border-left:4px solid var(--ed);background:var(--ed-bg);color:var(--ed-ink);
+    padding:10px 14px;font-size:17px;border-radius:0 8px 8px 0}
+
+  .controls{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center;margin-top:20px;
+    border-top:1px solid var(--line);padding-top:14px;font-size:14px}
+  .controls button{border:1px solid var(--line);background:#fff;border-radius:7px;padding:6px 13px;font-size:14px;cursor:pointer}
+  .controls button:hover{background:var(--faint)}
+  .dots{display:flex;gap:6px}
+  .dots button{width:11px;height:11px;border-radius:50%;padding:0;border:1px solid #c4c9cf;background:#fff}
+  .dots button[aria-current="step"]{background:var(--ink);border-color:var(--ink)}
+  .slno{color:var(--muted);margin-left:auto}
+  .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+</style>
+</head>
+<body>
+<main>
+  <div id="head" class="idle">
+    <div id="stepNo">1</div>
+    <div>
+      <div id="stepTitle">Automated assessment</div>
+      <div id="stepDesc">An online judge. The student edits, runs against their own input, and submits for grading — but only two of those three reach the log. Press Start.</div>
+    </div>
+  </div>
+
+  <div id="stage">
+    <div class="ide">
+      <div class="bar"><span class="dot"></span><b>CodeBench</b> — Introduction to Programming · Exercise 03, palindromes</div>
+      <div class="body">
+        <div class="exlist">
+          <div>01 ✓</div><div>02 ✓</div><div class="on">03</div><div>04</div><div>05</div>
+        </div>
+        <div class="editor">
+          <div class="code" id="code"><div id="ghosts"></div><div id="src"></div></div>
+          <div class="btns">
+            <span class="btn" id="bRun">▶ Run</span>
+            <span class="btn" id="bSub">Submit for grading</span>
+          </div>
+          <div class="console" id="con">$ </div>
+        </div>
+      </div>
+    </div>
+    <div class="side">
+      <h3>The log <em id="logsub"></em></h3>
+      <div id="log"></div>
+    </div>
+  </div>
+
+  <div id="final">
+    <div class="seq" id="seq"></div>
+    <div class="args">
+      <span>actor = <b>session</b></span><span>order = <b>order</b></span><span>state = <b>run type + outcome</b></span>
+    </div>
+    <div class="note" id="noteTxt">The platform never logged an edit. But it stored the code each run carried — so where two consecutive runs differ, an edit must have happened in between. That is how the <b>edit</b> states above were recovered.</div>
+  </div>
+
+  <p class="sr-only" id="caption" aria-live="polite">Press Start to begin.</p>
+
+  <div class="controls">
+    <button id="prev" type="button">‹ Back</button>
+    <button id="play" type="button">Start</button>
+    <button id="next" type="button">Next ›</button>
+    <div class="dots" id="dots" role="group" aria-label="Go to step"></div>
+    <button id="restart" type="button">Restart</button>
+    <label>Speed
+      <select id="speed"><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="1.5">1.5×</option><option value="2">2×</option></select>
+    </label>
+    <label><input type="checkbox" id="auto" checked> Autoplay</label>
+    <label><input type="checkbox" id="loop"> Loop</label>
+    <span class="slno" id="slno"></span>
+  </div>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const NSL = 6;
+let run = 0, paused = false, speed = 1, cur = 1, skipTo = 1, gate = false;
+
+function setBtn(t){ $("play").textContent = t; }
+function wait(ms, token){
+  if (cur < skipTo) return Promise.resolve(token === run);
+  return new Promise(res => {
+    let left = ms, last = performance.now();
+    (function tick(now){
+      if (token !== run) return res(false);
+      if (!paused) left -= (now - last) * speed;
+      last = now;
+      left <= 0 ? res(true) : requestAnimationFrame(tick);
+    })(last);
+  });
+}
+async function slide(n, token, title, desc){
+  if (n > 1 && n > skipTo && !$("auto").checked){
+    paused = true; gate = true; setBtn("Play");
+    if (!await wait(1, token)) return false;
+    gate = false; setBtn("Pause");
+  }
+  cur = n;
+  $("head").classList.remove("idle");
+  $("stepNo").textContent = n;
+  $("stepTitle").textContent = title;
+  $("stepDesc").textContent = desc;
+  $("caption").textContent = title + ". " + desc;
+  $("slno").textContent = n + " / " + NSL;
+  document.querySelectorAll("#dots button").forEach((b,j) => b.setAttribute("aria-current", j+1===n ? "step" : "false"));
+  return true;
+}
+
+/* ================= the code in the editor ================= */
+const V0 = [
+  "def is_pal(s):",
+  "    i, j = 0, len(s)",
+  "    while i < j:",
+  "        if s[i] != s[j]:",
+  "            return False",
+  "        i, j = i+1, j-1",
+  "    return True"
+];
+let LINES = V0.slice();
+let hot = -1, fresh = -1, caretAt = -1;
+
+const esc = s => s.replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+function render(){
+  $("src").innerHTML = LINES.map((l, i) =>
+    '<div class="cl' + (i === hot ? " hot" : "") + (i === fresh ? " fresh" : "") + '">' +
+    '<span class="ln">' + (i + 1) + '</span>' + esc(l) +
+    (i === caretAt ? '<span class="caret"></span>' : '') + '</div>').join("");
+}
+/* type `add` onto the end of line idx, one character at a time */
+async function typeOnto(idx, add, token){
+  hot = idx; caretAt = idx; render();
+  if (!await wait(260, token)) return false;
+  for (const ch of add){
+    LINES[idx] += ch;
+    render();
+    if (!await wait(68, token)) return false;
+  }
+  caretAt = -1; render();
+  if (!await wait(420, token)) return false;
+  hot = -1; render();
+  return true;
+}
+/* insert a whole new line at idx */
+async function insertLine(idx, text, token){
+  LINES.splice(idx, 0, "");
+  fresh = idx; caretAt = idx; render();
+  if (!await wait(240, token)) return false;
+  for (const ch of text){
+    LINES[idx] += ch;
+    render();
+    if (!await wait(52, token)) return false;
+  }
+  caretAt = -1; render();
+  if (!await wait(480, token)) return false;
+  fresh = -1; render();
+  return true;
+}
+function snapshot(){ return LINES.join("\n"); }
+function digest(s){            /* a short, stable, fake content hash */
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++){ h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+  return h.toString(16).padStart(8, "0").slice(0, 6);
+}
+
+/* ================= the log ================= */
+const EVENTS = [];   /* {label, kind, code, chip} — only runs and submissions */
+function hitBtn(id){
+  const b = $(id); b.classList.add("hit");
+  setTimeout(() => b.classList.remove("hit"), 260);
+}
+function con(html){ $("con").innerHTML = html; }
+async function ghost(text, token){
+  const g = document.createElement("div");
+  g.className = "ghost"; g.textContent = text;
+  $("ghosts").appendChild(g);
+  requestAnimationFrame(() => g.classList.add("on"));
+  if (!await wait(620, token)) return false;
+  g.classList.add("gone");
+  setTimeout(() => g.remove(), 500);
+  return true;
+}
+async function logEvent(label, kind, token){
+  const code = snapshot();
+  const d = document.createElement("div");
+  d.className = "chip k-" + kind;
+  d.innerHTML = '<span class="n">' + (EVENTS.length + 1) + '</span><code>' + label +
+                '</code><span class="hash">' + digest(code) + '</span>';
+  $("log").appendChild(d);
+  requestAnimationFrame(() => d.classList.add("on"));
+  EVENTS.push({label, kind, code, chip:d});
+  return await wait(430, token);
+}
+function reset(){
+  LINES = V0.slice(); hot = fresh = caretAt = -1; render();
+  $("log").innerHTML = ""; $("ghosts").innerHTML = ""; EVENTS.length = 0;
+  con("$ "); $("logsub").textContent = "";
+  $("final").classList.remove("on"); $("seq").innerHTML = "";
+}
+
+/* ================= the walkthrough ================= */
+async function play(token){
+  reset();
+
+  if (!await slide(1, token, "Automated assessment",
+      "An online judge. The student has a first attempt at a palindrome check on screen, and two buttons.")) return;
+  if (!await wait(1400, token)) return;
+
+  if (!await slide(2, token, "The student edits — and the platform does not care",
+      "Watch the code change. No save button, no edit event: none of this reaches the log.")) return;
+  if (!await ghost("keystrokes · not logged", token)) return;
+  if (!await typeOnto(2, "  # off by one?", token)) return;
+  if (!await wait(300, token)) return;
+  LINES[2] = "    while i < j:"; render();
+  if (!await ghost("deleted · not logged", token)) return;
+  if (!await wait(600, token)) return;
+
+  if (!await slide(3, token, "Run → the first thing the log sees",
+      "Running against their own input is recorded, with its outcome and with the code it carried.")) return;
+  hitBtn("bRun");
+  if (!await wait(600, token)) return;
+  con('$ python3 main.py\nkayak\n<span class="e">IndexError: string index out of range</span>');
+  if (!await wait(500, token)) return;
+  if (!await logEvent("test_error", "err", token)) return;
+  if (!await wait(700, token)) return;
+
+  if (!await slide(4, token, "An edit, in the code itself",
+      "The index is one past the end. Four characters fix it — and the log records nothing at all.")) return;
+  if (!await typeOnto(1, " - 1", token)) return;
+  if (!await ghost("edited line 2 · not logged", token)) return;
+  if (!await wait(300, token)) return;
+  hitBtn("bRun");
+  if (!await wait(550, token)) return;
+  con('$ python3 main.py\nkayak\n<span class="g">True</span>');
+  if (!await wait(400, token)) return;
+  if (!await logEvent("test_ok", "ok", token)) return;
+  if (!await wait(700, token)) return;
+
+  if (!await slide(5, token, "Submit, edit, submit",
+      "Grading runs hidden cases. A failing one sends the student back into the code — again invisibly.")) return;
+  hitBtn("bSub");
+  if (!await wait(550, token)) return;
+  con('Submitting…\n<span class="e">1 of 3 cases failed: "Never odd or even" — grade 67%</span>');
+  if (!await wait(500, token)) return;
+  if (!await logEvent("submission_partial", "sub", token)) return;
+  if (!await wait(500, token)) return;
+  if (!await insertLine(1, '    s = s.lower().replace(" ", "")', token)) return;
+  if (!await ghost("added a line · not logged", token)) return;
+  if (!await wait(300, token)) return;
+  hitBtn("bSub");
+  if (!await wait(550, token)) return;
+  con('Submitting…\n<span class="g">3 of 3 cases passed — grade 100%</span>');
+  if (!await wait(400, token)) return;
+  if (!await logEvent("submission_pass", "pass", token)) return;
+  if (!await wait(900, token)) return;
+
+  if (!await slide(6, token, "Recovering the edit events",
+      "The log holds four states — but it stored the code each run carried. Where two consecutive hashes differ, an edit happened.")) return;
+  $("logsub").textContent = "— with the code each run carried";
+  EVENTS.forEach(e => e.chip.classList.add("showh"));
+  if (!await wait(1500, token)) return;
+
+  /* mark the gaps where the snapshots differ */
+  for (let i = 1; i < EVENTS.length; i++){
+    if (EVENTS[i].code !== EVENTS[i-1].code){
+      const g = document.createElement("div");
+      g.className = "gapnote";
+      g.innerHTML = digest(EVENTS[i-1].code) + " ≠ " + digest(EVENTS[i].code) + " → <b>edit</b>";
+      EVENTS[i].chip.insertAdjacentElement("beforebegin", g);
+      requestAnimationFrame(() => g.classList.add("on"));
+      if (!await wait(800, token)) return;
+    }
+  }
+  if (!await wait(600, token)) return;
+
+  /* build the recovered sequence */
+  const out = [];
+  EVENTS.forEach((e, i) => {
+    if (i && e.code !== EVENTS[i-1].code) out.push(["edit", "ed", true]);
+    out.push([e.label, e.kind, false]);
+  });
+  $("seq").innerHTML = out.map(([l,k,isEdit], i) =>
+    (i ? '<span class="ar">→</span>' : '') +
+    '<span class="s k-' + k + (isEdit ? " pop" : "") + '">' + l + '</span>').join("");
+  $("final").classList.add("on");
+  $("caption").textContent = "Four logged states become six once the edits are recovered.";
+  if (!await wait(3000, token)) return;
+
+  if ($("loop").checked){ go(1); } else { setBtn("Restart"); }
+}
+
+/* ================= controls ================= */
+function go(n){
+  if (n < 1) n = 1;
+  if (n > NSL) n = NSL;
+  run++; const token = run;
+  paused = false; gate = false; skipTo = n; cur = 1;
+  setBtn("Pause");
+  play(token).then(() => { if (token === run && !$("loop").checked) setBtn("Restart"); });
+  skipTo = n;
+}
+(function initDots(){
+  const d = $("dots");
+  for (let i = 1; i <= NSL; i++){
+    const b = document.createElement("button");
+    b.type = "button"; b.dataset.n = i; b.setAttribute("aria-label", "Step " + i);
+    d.appendChild(b);
+  }
+})();
+$("dots").addEventListener("click", e => { const b = e.target.closest("button"); if (b) go(+b.dataset.n); });
+$("play").addEventListener("click", () => {
+  if (run === 0){ go(1); return; }
+  if (gate){ paused = false; gate = false; setBtn("Pause"); return; }
+  paused = !paused; setBtn(paused ? "Play" : "Pause");
+});
+$("restart").addEventListener("click", () => go(1));
+$("next").addEventListener("click", () => { if (gate){ paused = false; gate = false; setBtn("Pause"); return; } go(cur + 1); });
+$("prev").addEventListener("click", () => go(cur - 1));
+$("speed").addEventListener("change", e => { speed = parseFloat(e.target.value); });
+document.addEventListener("keydown", e => {
+  if (e.key === "ArrowRight") $("next").click();
+  else if (e.key === "ArrowLeft") $("prev").click();
+  else if (e.key === " "){ e.preventDefault(); $("play").click(); }
+});
+render();
+$("slno").textContent = "1 / " + NSL;
+</script>
+</body>
+</html>

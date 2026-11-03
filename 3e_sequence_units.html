@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Building the sequences — actor, session, order and timestamp</title>
+<style>
+  :root{
+    --ink:#1f2328; --muted:#6b7078; --line:#dfe2e6; --faint:#f5f6f7;
+    --s1:#1D9E75; --s1-bg:#E1F5EE; --s1-ink:#085041;
+    --s2:#185FA5; --s2-bg:#E4EFFA; --s2-ink:#0C3A68;
+    --s3:#BA7517; --s3-bg:#FAEEDA; --s3-ink:#633806;
+    --warn:#D85A30; --warn-bg:#FAECE7; --warn-ink:#712B13;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:#fff;color:var(--ink);
+    font-family:"Segoe UI",-apple-system,"Helvetica Neue",Arial,sans-serif}
+  main{max-width:1260px;margin:0 auto;padding:24px 24px 32px}
+  .k-s1{--c:var(--s1);--c-bg:var(--s1-bg);--c-ink:var(--s1-ink)}
+  .k-s2{--c:var(--s2);--c-bg:var(--s2-bg);--c-ink:var(--s2-ink)}
+  .k-s3{--c:var(--s3);--c-bg:var(--s3-bg);--c-ink:var(--s3-ink)}
+
+  #head{display:flex;gap:18px;align-items:center;min-height:58px}
+  #stepNo{flex:none;width:46px;height:46px;border-radius:50%;background:var(--ink);color:#fff;
+    display:grid;place-items:center;font-size:22px;font-weight:700}
+  #head.idle #stepNo{background:#b9bdc3}
+  #stepTitle{font-size:27px;font-weight:700;margin:2px 0 3px}
+  #stepDesc{font-size:19px;color:#3d4248;line-height:1.4;max-width:1140px}
+
+  #stage{display:grid;grid-template-columns:555px 1fr;gap:26px;margin-top:14px;min-height:480px}
+
+  /* ---------- the raw table ---------- */
+  .tbl{border:2px solid var(--ink);border-radius:12px;overflow:hidden;align-self:start}
+  .tbl .cap{background:var(--ink);color:#fff;font-size:13px;padding:6px 11px;display:flex;justify-content:space-between}
+  .grid{display:grid;grid-template-columns:30px 52px 40px 38px 54px 68px 1fr;font-size:13px}
+  .grid .h{font-weight:700;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em;
+    padding:7px 5px;border-bottom:2px solid var(--ink);background:#fff}
+  .cell{padding:4px 5px;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums;
+    transition:background-color .45s,opacity .4s,color .4s}
+  .cell.mono{font-family:"SF Mono",Menlo,Consolas,monospace;font-size:12px}
+  .r-lit .cell{background:var(--c-bg)}
+  .r-now .cell{background:var(--c);color:#fff;font-weight:700}
+  .r-dim .cell{opacity:.22}
+  .ordcol{opacity:0;transition:opacity .5s}
+  .ordcol.on{opacity:1}
+  .tie .cell{background:var(--warn-bg);color:var(--warn-ink);font-weight:700}
+  .bar6{display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--c);margin-right:5px;vertical-align:-1px}
+  .dayrule .cell{border-top:2px dashed #c4c9cf}
+
+  /* ---------- lanes ---------- */
+  .side h3{font-size:15px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:0 0 5px}
+  .choice{display:flex;gap:8px;margin:0 0 12px;flex-wrap:wrap;min-height:32px}
+  .ch{border:2px solid var(--line);border-radius:999px;padding:5px 13px;font-size:14px;color:var(--muted);
+    font-family:"SF Mono",Menlo,Consolas,monospace;transition:all .4s}
+  .ch.on{border-color:var(--ink);color:var(--ink);font-weight:700;background:var(--faint)}
+  #lanes{display:flex;flex-direction:column;gap:9px;min-height:320px}
+  .lane{display:flex;align-items:flex-start;gap:9px;opacity:0;transform:translateY(-6px);
+    transition:opacity .45s,transform .45s}
+  .lane.on{opacity:1;transform:none}
+  .lane .key{font-family:"SF Mono",Menlo,Consolas,monospace;font-size:12px;color:var(--c-ink);
+    background:var(--c-bg);border:1px solid var(--c);border-radius:6px;padding:3px 8px;min-width:150px;flex:none}
+  .lane .track{display:flex;align-items:center;gap:5px;flex-wrap:wrap;padding-top:1px}
+  .st{border:2px solid var(--c);background:#fff;color:var(--c-ink);border-radius:7px;padding:2px 8px;
+    font-family:"SF Mono",Menlo,Consolas,monospace;font-size:12.5px;font-weight:600;
+    opacity:0;transform:scale(.7);transition:opacity .35s,transform .35s}
+  .st.on{opacity:1;transform:none}
+  .ar{color:var(--muted);font-size:12px;opacity:0;transition:opacity .35s}
+  .ar.on{opacity:1}
+  .brk{display:inline-flex;align-items:center;gap:5px;border:2px dashed var(--warn);color:var(--warn-ink);
+    background:var(--warn-bg);border-radius:6px;padding:1px 8px;font-size:11.5px;font-weight:700;
+    opacity:0;transition:opacity .45s}
+  .brk.on{opacity:1}
+  .count{font-size:15px;color:var(--muted);margin-top:13px;min-height:30px}
+  .count b{color:var(--ink);font-size:21px;font-family:"SF Mono",Menlo,Consolas,monospace}
+
+  /* ---------- final ---------- */
+  #final{opacity:0;transition:opacity .7s;margin-top:16px}
+  #final.on{opacity:1}
+  .four{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+  .card{border:2px solid var(--line);border-radius:10px;padding:12px 14px}
+  .card.bad{border-color:var(--warn);background:var(--warn-bg)}
+  .card h4{margin:0 0 5px;font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+  .card .v{font-family:"SF Mono",Menlo,Consolas,monospace;font-size:19px;font-weight:700;margin-bottom:4px}
+  .card.bad .v{color:var(--warn-ink)}
+  .card p{margin:0;font-size:14px;line-height:1.4;color:#3d4248}
+  .note{margin-top:13px;border-left:4px solid var(--warn);background:var(--warn-bg);color:var(--warn-ink);
+    padding:10px 14px;font-size:17px;border-radius:0 8px 8px 0}
+
+  .controls{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center;margin-top:20px;
+    border-top:1px solid var(--line);padding-top:14px;font-size:14px}
+  .controls button{border:1px solid var(--line);background:#fff;border-radius:7px;padding:6px 13px;font-size:14px;cursor:pointer}
+  .controls button:hover{background:var(--faint)}
+  .dots{display:flex;gap:6px}
+  .dots button{width:11px;height:11px;border-radius:50%;padding:0;border:1px solid #c4c9cf;background:#fff}
+  .dots button[aria-current="step"]{background:var(--ink);border-color:var(--ink)}
+  .slno{color:var(--muted);margin-left:auto}
+  .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+</style>
+</head>
+<body>
+<main>
+  <div id="head" class="idle">
+    <div id="stepNo">1</div>
+    <div>
+      <div id="stepTitle">Building the sequences</div>
+      <div id="stepDesc">The same palindrome exercise as before, now with three students across two classes and two days. We will take them one at a time. Press Start.</div>
+    </div>
+  </div>
+
+  <div id="stage">
+    <div class="tbl">
+      <div class="cap"><span>codebench.csv — 15 rows as logged</span><span id="sortBy">sorted by time</span></div>
+      <div class="grid" id="grid"></div>
+    </div>
+
+    <div class="side">
+      <h3 id="laneHead">Sequences</h3>
+      <div class="choice">
+        <span class="ch" id="chA">actor = student</span>
+        <span class="ch" id="chB">+ class × exercise</span>
+        <span class="ch" id="chC">+ 30-min cut = session</span>
+      </div>
+      <div id="lanes"></div>
+      <div class="count" id="count"></div>
+    </div>
+  </div>
+
+  <div id="final">
+    <div class="four">
+      <div class="card"><h4>actor</h4><div class="v">session</div><p>What counts as one sequence. Here: one student, on one exercise, in one sitting.</p></div>
+      <div class="card"><h4>session</h4><div class="v">the 30-min cut</div><p>Already applied in the file. Pass it as the actor, or as <b>session</b> alongside <b>userid</b>.</p></div>
+      <div class="card"><h4>order</h4><div class="v">order</div><p>Contiguous 1..n inside each sequence. Survives the ties the clock cannot.</p></div>
+      <div class="card bad"><h4>timestamp</h4><div class="v">leave it out</div><p>Whole seconds, so it ties — and a <b>time</b> argument re-sessions on a 900-second gap, overriding the unit you just passed.</p></div>
+    </div>
+    <div class="note">Three students, fifteen rows, and anywhere between 3 and 6 sequences depending on where the cuts go. Nothing in the data picks for you.</div>
+  </div>
+
+  <p class="sr-only" id="caption" aria-live="polite">Press Start to begin.</p>
+
+  <div class="controls">
+    <button id="prev" type="button">‹ Back</button>
+    <button id="play" type="button">Start</button>
+    <button id="next" type="button">Next ›</button>
+    <div class="dots" id="dots" role="group" aria-label="Go to step"></div>
+    <button id="restart" type="button">Restart</button>
+    <label>Speed
+      <select id="speed"><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="1.5">1.5×</option><option value="2">2×</option></select>
+    </label>
+    <label><input type="checkbox" id="auto" checked> Autoplay</label>
+    <label><input type="checkbox" id="loop"> Loop</label>
+    <span class="slno" id="slno"></span>
+  </div>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const NSL = 8;
+let run = 0, paused = false, speed = 1, cur = 1, skipTo = 1, gate = false;
+
+function setBtn(t){ $("play").textContent = t; }
+function wait(ms, token){
+  if (cur < skipTo) return Promise.resolve(token === run);
+  return new Promise(res => {
+    let left = ms, last = performance.now();
+    (function tick(now){
+      if (token !== run) return res(false);
+      if (!paused) left -= (now - last) * speed;
+      last = now;
+      left <= 0 ? res(true) : requestAnimationFrame(tick);
+    })(last);
+  });
+}
+async function slide(n, token, title, desc){
+  if (n > 1 && n > skipTo && !$("auto").checked){
+    paused = true; gate = true; setBtn("Play");
+    if (!await wait(1, token)) return false;
+    gate = false; setBtn("Pause");
+  }
+  cur = n;
+  $("head").classList.remove("idle");
+  $("stepNo").textContent = n;
+  $("stepTitle").textContent = title;
+  $("stepDesc").textContent = desc;
+  $("caption").textContent = title + ". " + desc;
+  $("slno").textContent = n + " / " + NSL;
+  document.querySelectorAll("#dots button").forEach((b,j) => b.setAttribute("aria-current", j+1===n ? "step" : "false"));
+  return true;
+}
+
+/* ============ the log: [student, class, exercise, date, clock, minutes, state] ============ */
+const ROWS = [
+  ["1059","523","03","Mar 7","09:14:02", 554.03,"test_error"],
+  ["1059","523","03","Mar 7","09:14:02", 554.03,"test_error"],
+  ["8161","523","03","Mar 7","09:14:55", 554.92,"test_ok"],
+  ["1059","523","03","Mar 7","09:15:40", 555.67,"test_ok"],
+  ["1059","523","03","Mar 7","09:16:05", 556.08,"submission_partial"],
+  ["4427","527","03","Mar 7","09:16:30", 556.50,"test_error"],
+  ["8161","523","03","Mar 7","09:17:20", 557.33,"submission_fail"],
+  ["1059","523","03","Mar 7","09:17:30", 557.50,"submission_pass"],
+  ["4427","527","03","Mar 7","09:18:40", 558.67,"submission_pass"],
+  ["1059","523","04","Mar 7","11:02:10", 662.17,"test_error"],
+  ["1059","523","04","Mar 7","11:03:50", 663.83,"submission_fail"],
+  ["8161","523","03","Mar 7","16:40:05",1000.08,"test_error"],
+  ["8161","523","03","Mar 7","16:41:30",1001.50,"submission_pass"],
+  ["1059","527","03","Mar 8","14:20:00",2300.00,"test_ok"],
+  ["1059","527","03","Mar 8","14:21:10",2301.17,"submission_pass"]
+];
+const COLOUR = {"1059":"s1", "8161":"s2", "4427":"s3"};
+const ORD = {};
+(function assignOrder(){
+  const by = {};
+  ROWS.forEach((r,i) => { (by[r[0]] = by[r[0]] || []).push(i); });
+  for (const s in by){
+    by[s].sort((a,b) => ROWS[a][5] - ROWS[b][5] || a - b);
+    by[s].forEach((idx,k) => ORD[idx] = k + 1);
+  }
+})();
+const rowsOf = stu => ROWS.map((r,i) => i).filter(i => ROWS[i][0] === stu)
+                          .sort((a,b) => ORD[a] - ORD[b]);
+
+/* ============ table ============ */
+function buildGrid(){
+  const g = $("grid");
+  g.innerHTML = ['ord','student','class','exer','date','time','state']
+    .map((h,i) => '<div class="h' + (i === 0 ? ' ordcol" id="hOrd' : '') + '">' + h + '</div>').join("");
+  ROWS.forEach((r,i) => {
+    const prevDate = i ? ROWS[i-1][3] : r[3];
+    const cells =
+      '<div class="cell mono ordcol">' + ORD[i] + '</div>' +
+      '<div class="cell mono"><span class="bar6"></span>' + r[0] + '</div>' +
+      '<div class="cell mono">' + r[1] + '</div>' +
+      '<div class="cell mono">' + r[2] + '</div>' +
+      '<div class="cell mono">' + r[3] + '</div>' +
+      '<div class="cell mono">' + r[4] + '</div>' +
+      '<div class="cell mono">' + r[6] + '</div>';
+    g.insertAdjacentHTML("beforeend",
+      '<div class="rw k-' + COLOUR[r[0]] + (r[3] !== prevDate ? " dayrule" : "") +
+      '" data-i="' + i + '" style="display:contents">' + cells + '</div>');
+  });
+}
+const rw = i => $("grid").querySelector('[data-i="' + i + '"]');
+function dimAllBut(stu){
+  ROWS.forEach((r,i) => {
+    rw(i).classList.toggle("r-dim", stu !== null && r[0] !== stu);
+    rw(i).classList.remove("r-now","r-lit");
+  });
+}
+function clearRows(){
+  ROWS.forEach((r,i) => rw(i).classList.remove("r-dim","r-now","r-lit","tie"));
+}
+function showOrder(on){
+  const h = $("hOrd"); if (h) h.classList.toggle("on", on);
+  $("grid").querySelectorAll(".ordcol").forEach(c => c.classList.toggle("on", on));
+}
+
+/* ============ lanes ============ */
+function makeLane(key, colour){
+  const d = document.createElement("div");
+  d.className = "lane k-" + colour;
+  d.innerHTML = '<span class="key">' + key + '</span><span class="track"></span>';
+  $("lanes").appendChild(d);
+  requestAnimationFrame(() => d.classList.add("on"));
+  return d.querySelector(".track");
+}
+async function pushState(track, idx, token, ms){
+  rw(idx).classList.add("r-now");
+  if (track.querySelector(".st")){
+    const a = document.createElement("span");
+    a.className = "ar"; a.textContent = "→";
+    track.appendChild(a);
+    requestAnimationFrame(() => a.classList.add("on"));
+  }
+  const s = document.createElement("span");
+  s.className = "st"; s.textContent = ROWS[idx][6];
+  track.appendChild(s);
+  requestAnimationFrame(() => s.classList.add("on"));
+  const ok = await wait(ms, token);
+  rw(idx).classList.remove("r-now");
+  rw(idx).classList.add("r-lit");
+  return ok;
+}
+async function addBreak(track, label, token, ms){
+  if (!track) return true;
+  const b = document.createElement("span");
+  b.className = "brk"; b.textContent = label;
+  track.appendChild(b);
+  requestAnimationFrame(() => b.classList.add("on"));
+  return await wait(ms === undefined ? 1000 : ms, token);
+}
+function setChoice(which){ ["chA","chB","chC"].forEach(id => $(id).classList.toggle("on", id === which)); }
+function setCount(html){ $("count").innerHTML = html; }
+
+/* grouping keys */
+const keyStudent  = r => r[0];
+const keyClassEx  = r => r[0] + " · c" + r[1] + " · ex" + r[2];
+function keySession(r, i){
+  const base = keyClassEx(r);
+  let n = 1, prev = null;
+  for (let j = 0; j < ROWS.length; j++){
+    if (keyClassEx(ROWS[j]) !== base) continue;
+    if (prev !== null && ROWS[j][5] - prev > 30) n++;
+    if (j === i) return base + " #" + n;
+    prev = ROWS[j][5];
+  }
+  return base;
+}
+/* redraw the lanes for the students revealed so far, optionally pausing per student */
+async function redraw(keyFn, students, token, perStudent){
+  $("lanes").innerHTML = "";
+  const seen = new Map();
+  for (const stu of students){
+    for (const idx of rowsOf(stu)){
+      const k = keyFn(ROWS[idx], idx);
+      if (!seen.has(k)) seen.set(k, makeLane(k, COLOUR[stu]));
+      const track = seen.get(k);
+      if (track.querySelector(".st")){
+        const a = document.createElement("span");
+        a.className = "ar on"; a.textContent = "→";
+        track.appendChild(a);
+      }
+      const s = document.createElement("span");
+      s.className = "st on"; s.textContent = ROWS[idx][6];
+      track.appendChild(s);
+    }
+    if (perStudent && !await wait(perStudent, token)) return -1;
+  }
+  return seen.size;
+}
+const lastLanes = () => Array.from($("lanes").querySelectorAll(".lane .track"));
+
+function reset(){
+  clearRows(); showOrder(false);
+  $("lanes").innerHTML = ""; setCount(""); setChoice(null);
+  $("laneHead").textContent = "Sequences";
+  $("sortBy").textContent = "sorted by time";
+  $("final").classList.remove("on");
+}
+
+/* ============ the walkthrough ============ */
+async function play(token){
+  reset();
+
+  /* ---- 1. the flat log ---- */
+  if (!await slide(1, token, "One flat log",
+      "Fifteen rows in the order the platform wrote them. Three students, two classes, two exercises, two days — all interleaved, because they were working at the same time.")) return;
+  if (!await wait(2600, token)) return;
+
+  /* ---- 2. student 1059, everything they did ---- */
+  if (!await slide(2, token, "Take one student: 1059",
+      "Nine rows. They are not one piece of work — watch the class, exercise and date columns go by as the states line up.")) return;
+  $("laneHead").textContent = "Student 1059";
+  setChoice("chA");
+  dimAllBut("1059");
+  if (!await wait(1200, token)) return;
+  const t1 = makeLane("1059", "s1");
+  for (const idx of rowsOf("1059")){
+    if (!await pushState(t1, idx, token, 700)) return;
+  }
+  setCount('<b>1</b> sequence &nbsp;·&nbsp; everything 1059 ever did, in one line');
+  if (!await wait(2000, token)) return;
+
+  /* ---- 3. the tie inside 1059 ---- */
+  if (!await slide(3, token, "Two of those rows share a second",
+      "Both of 1059's first two runs are stamped 09:14:02. The clock cannot say which came first, so a separate order column does — 1..n per student, from a stable sort.")) return;
+  rw(0).classList.add("tie"); rw(1).classList.add("tie");
+  if (!await wait(2000, token)) return;
+  showOrder(true);
+  $("sortBy").textContent = "order = 1..n per student";
+  if (!await wait(2100, token)) return;
+  rw(0).classList.remove("tie"); rw(1).classList.remove("tie");
+
+  /* ---- 4. 1059 across exercises ---- */
+  if (!await slide(4, token, "1059 across two exercises",
+      "After passing exercise 03 they moved to exercise 04 later the same morning. Those are two different problems, so splitting on exercise pulls the one line apart.")) return;
+  setChoice("chB");
+  if (await redraw(keyClassEx, ["1059"], token, 600) < 0) return;
+  if (!await wait(800, token)) return;
+  const L4 = lastLanes();
+  if (!await addBreak(L4[1], "different exercise, 11:02", token)) return;
+  setCount('<b>3</b> sequences from 1059 &nbsp;·&nbsp; two exercises, two classes');
+  if (!await wait(1800, token)) return;
+
+  /* ---- 5. 1059 across days and classes ---- */
+  if (!await slide(5, token, "…and across two days, in two classes",
+      "The next day 1059 sat exercise 03 again — but enrolled in class 527. Same student, same exercise, different section and a day apart. Keeping it in one sequence would invent a transition that never happened.")) return;
+  const L5 = lastLanes();
+  if (!await addBreak(L5[2], "class 527, next day", token, 1400)) return;
+  if (!await wait(2000, token)) return;
+
+  /* ---- 6. student 8161 ---- */
+  if (!await slide(6, token, "Now the second student: 8161",
+      "Four rows, all class 523, all exercise 03 — so by exercise and class they are one sequence. But look at the clock: two in the morning, two at 16:40.")) return;
+  $("laneHead").textContent = "Students 1059 and 8161";
+  dimAllBut("8161");
+  if (!await wait(1100, token)) return;
+  const t2 = makeLane("8161 · c523 · ex03", "s2");
+  for (const idx of rowsOf("8161")){
+    if (!await pushState(t2, idx, token, 800)) return;
+  }
+  if (!await wait(1000, token)) return;
+  if (!await addBreak(t2, "6 hours between these two pairs", token, 1600)) return;
+  if (!await wait(1200, token)) return;
+  setChoice("chC");
+  dimAllBut(null);
+  if (await redraw(keySession, ["1059","8161"], token, 550) < 0) return;
+  setCount('<b>5</b> sequences &nbsp;·&nbsp; the 30-minute cut splits 8161 in two');
+  if (!await wait(2300, token)) return;
+
+  /* ---- 7. student 4427 ---- */
+  if (!await slide(7, token, "And the third: 4427",
+      "The simple case. One class, one exercise, two minutes apart, no gaps and no ties. One sequence however you cut it — most students look like this.")) return;
+  $("laneHead").textContent = "All three students";
+  dimAllBut("4427");
+  if (!await wait(1000, token)) return;
+  const t3 = makeLane("4427 · c527 · ex03", "s3");
+  for (const idx of rowsOf("4427")){
+    if (!await pushState(t3, idx, token, 800)) return;
+  }
+  if (!await wait(1100, token)) return;
+  clearRows();
+  if (await redraw(keySession, ["1059","8161","4427"], token, 400) < 0) return;
+  setCount('<b>6</b> sequences &nbsp;·&nbsp; actor = session');
+  if (!await wait(2200, token)) return;
+
+  /* ---- 8. the three defensible answers ---- */
+  if (!await slide(8, token, "Three defensible answers",
+      "The same fifteen rows. Group by student and you get 3 sequences; add class and exercise and you get 5; add the 30-minute cut and you get 6. Each one estimates a different network.")) return;
+  setChoice("chA");
+  if (await redraw(keyStudent, ["1059","8161","4427"], token, 0) < 0) return;
+  setCount('<b>3</b> sequences &nbsp;·&nbsp; actor = student');
+  if (!await wait(2300, token)) return;
+  setChoice("chB");
+  if (await redraw(keyClassEx, ["1059","8161","4427"], token, 0) < 0) return;
+  setCount('<b>5</b> sequences &nbsp;·&nbsp; actor = student × class × exercise');
+  if (!await wait(2300, token)) return;
+  setChoice("chC");
+  if (await redraw(keySession, ["1059","8161","4427"], token, 0) < 0) return;
+  setCount('<b>6</b> sequences &nbsp;·&nbsp; actor = session');
+  if (!await wait(1500, token)) return;
+  $("final").classList.add("on");
+  if (!await wait(3600, token)) return;
+
+  if ($("loop").checked){ go(1); } else { setBtn("Restart"); }
+}
+
+/* ============ controls ============ */
+function go(n){
+  if (n < 1) n = 1;
+  if (n > NSL) n = NSL;
+  run++; const token = run;
+  paused = false; gate = false; skipTo = n; cur = 1;
+  setBtn("Pause");
+  play(token).then(() => { if (token === run && !$("loop").checked) setBtn("Restart"); });
+}
+(function initDots(){
+  const d = $("dots");
+  for (let i = 1; i <= NSL; i++){
+    const b = document.createElement("button");
+    b.type = "button"; b.dataset.n = i; b.setAttribute("aria-label", "Step " + i);
+    d.appendChild(b);
+  }
+})();
+$("dots").addEventListener("click", e => { const b = e.target.closest("button"); if (b) go(+b.dataset.n); });
+$("play").addEventListener("click", () => {
+  if (run === 0){ go(1); return; }
+  if (gate){ paused = false; gate = false; setBtn("Pause"); return; }
+  paused = !paused; setBtn(paused ? "Play" : "Pause");
+});
+$("restart").addEventListener("click", () => go(1));
+$("next").addEventListener("click", () => { if (gate){ paused = false; gate = false; setBtn("Pause"); return; } go(cur + 1); });
+$("prev").addEventListener("click", () => go(cur - 1));
+$("speed").addEventListener("change", e => { speed = parseFloat(e.target.value); });
+document.addEventListener("keydown", e => {
+  if (e.key === "ArrowRight") $("next").click();
+  else if (e.key === "ArrowLeft") $("prev").click();
+  else if (e.key === " "){ e.preventDefault(); $("play").click(); }
+});
+buildGrid();
+$("slno").textContent = "1 / " + NSL;
+</script>
+</body>
+</html>

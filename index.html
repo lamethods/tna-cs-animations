@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TNA animations for computing education</title>
+<style>
+  :root{--ink:#1f2328;--muted:#6b7078;--line:#dfe2e6;--faint:#f5f6f7;--acc:#1D9E75}
+  *{box-sizing:border-box}
+  html,body{margin:0;background:#fff;color:var(--ink);
+    font-family:"Segoe UI",-apple-system,"Helvetica Neue",Arial,sans-serif}
+  main{max-width:900px;margin:0 auto;padding:48px 24px 64px}
+  h1{font-size:38px;font-weight:300;line-height:1.15;margin:0 0 10px}
+  .lede{font-size:20px;line-height:1.5;color:#3d4248;margin:0 0 34px;max-width:720px}
+  ul{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:14px}
+  a.card{display:block;border:2px solid var(--line);border-radius:12px;padding:18px 20px;text-decoration:none;
+    color:inherit;transition:border-color .2s,transform .2s}
+  a.card:hover{border-color:var(--acc);transform:translateY(-2px)}
+  .n{font-family:"SF Mono",Menlo,Consolas,monospace;font-size:13px;color:var(--acc);font-weight:700;
+    letter-spacing:.06em}
+  .t{font-size:22px;font-weight:600;margin:3px 0 6px}
+  .d{font-size:16px;line-height:1.5;color:#3d4248;margin:0}
+  footer{margin-top:40px;padding-top:18px;border-top:1px solid var(--line);font-size:15px;color:var(--muted);line-height:1.6}
+  kbd{font-family:"SF Mono",Menlo,Consolas,monospace;font-size:13px;border:1px solid var(--line);
+    border-bottom-width:2px;border-radius:4px;padding:1px 5px;background:var(--faint)}
+</style>
+</head>
+<body>
+<main>
+  <h1>TNA animations for computing education</h1>
+  <p class="lede">Where sequence data comes from, and what each source makes you decide before
+  a transition network can be estimated. Five self-contained pages — no dependencies, no build step.</p>
+
+  <ul>
+    <li><a class="card" href="3a_source_autograder.html">
+      <div class="n">3A · AUTOMATED ASSESSMENT</div>
+      <div class="t">Runs, submissions, and the edits in between</div>
+      <p class="d">A student edits, runs and submits in an online judge. The code visibly changes, but only
+      the runs reach the log — then the <code>edit</code> states are recovered by comparing the code each run carried.</p>
+    </a></li>
+
+    <li><a class="card" href="3b_source_ai_dialogue.html">
+      <div class="n">3B · CODED DISCOURSE</div>
+      <div class="t">A student–AI conversation becomes states</div>
+      <p class="d">A turn is not a state until a codebook is applied to it. At the end, coding only the
+      student collapses every assistant turn to a single <code>AI</code>.</p>
+    </a></li>
+
+    <li><a class="card" href="3c_source_observation.html">
+      <div class="n">3C · OBSERVATION</div>
+      <div class="t">Where does one state end?</div>
+      <p class="d">Screen capture and think-aloud from a pair debugging a loop. One coder draws the segment
+      boundaries; a second coder draws different ones from the same six minutes.</p>
+    </a></li>
+
+    <li><a class="card" href="3d_source_sensors.html">
+      <div class="n">3D · SENSORS</div>
+      <div class="t">Gaze becomes states only after someone draws the boxes</div>
+      <p class="d">Eye tracking over a spec, some code and a failing test. Raise the minimum dwell and the
+      quick glances back at the error message stop existing.</p>
+    </a></li>
+
+    <li><a class="card" href="3e_sequence_units.html">
+      <div class="n">3E · BUILDING THE SEQUENCES</div>
+      <div class="t">actor, session, order, timestamp</div>
+      <p class="d">The same exercise as 3A, now across three students, two classes and two exercises —
+      one flat log giving 3, 5 or 6 sequences depending on where the cuts go.</p>
+    </a></li>
+  </ul>
+
+  <footer>
+    <p>Every page shares the same controls: <kbd>←</kbd> <kbd>→</kbd> to step, <kbd>space</kbd> to play or pause,
+    a speed selector, and autoplay and loop toggles. Untick <b>Autoplay</b> to drive them by hand while presenting.</p>
+    <p>No student data appears in any of these files. Every identifier, timestamp and utterance is fabricated
+    for the illustration.</p>
+  </footer>
+</main>
+</body>
+</html>
