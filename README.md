@@ -1,6 +1,6 @@
 # TNA animations for computing education
 
-**Live:** <https://lamethods.github.io/tna-cs-animations/>
+**Live:** <https://lamethods.org/tna-cs-animations/>
 
 Five self-contained, stepped animations about **where sequence data comes from** in
 computing education, and what each source makes you decide before a transition network
