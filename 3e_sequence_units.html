@@ -70,8 +70,25 @@
     background:var(--warn-bg);border-radius:6px;padding:1px 8px;font-size:11.5px;font-weight:700;
     opacity:0;transition:opacity .45s}
   .brk.on{opacity:1}
+  #lanes.many{gap:4px}
+  #lanes.many .lane .key{font-size:11px;padding:1px 6px;min-width:96px}
+  #lanes.many .st{font-size:11.5px;padding:1px 6px}
   .count{font-size:15px;color:var(--muted);margin-top:13px;min-height:30px}
   .count b{color:var(--ink);font-size:21px;font-family:"SF Mono",Menlo,Consolas,monospace}
+
+  /* ---------- the threshold dial ---------- */
+  #dial{opacity:0;transition:opacity .5s;margin-top:16px;max-width:440px}
+  #dial.on{opacity:1}
+  .dlab{font-size:15px;color:var(--muted);margin-bottom:8px}
+  .dlab b{font-family:"SF Mono",Menlo,Consolas,monospace;color:var(--ink);font-size:17px}
+  .dtrack{position:relative;height:6px;background:var(--line);border-radius:3px}
+  .dmark{position:absolute;top:-5px;left:0;margin-left:-8px;width:16px;height:16px;border-radius:50%;
+    background:var(--ink);border:3px solid #fff;box-shadow:0 0 0 1px var(--ink);
+    transition:left .65s cubic-bezier(.4,0,.2,1)}
+  .dticks{display:flex;justify-content:space-between;margin-top:7px;font-size:11.5px;color:var(--muted);
+    font-family:"SF Mono",Menlo,Consolas,monospace}
+  .dticks span{transition:color .4s}
+  .dticks span.on{color:var(--ink);font-weight:700}
 
   /* ---------- final ---------- */
   #final{opacity:0;transition:opacity .7s;margin-top:16px}
@@ -83,8 +100,6 @@
   .card .v{font-family:"SF Mono",Menlo,Consolas,monospace;font-size:19px;font-weight:700;margin-bottom:4px}
   .card.bad .v{color:var(--warn-ink)}
   .card p{margin:0;font-size:14px;line-height:1.4;color:#3d4248}
-  .note{margin-top:13px;border-left:4px solid var(--warn);background:var(--warn-bg);color:var(--warn-ink);
-    padding:10px 14px;font-size:17px;border-radius:0 8px 8px 0}
 
   .controls{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center;margin-top:20px;
     border-top:1px solid var(--line);padding-top:14px;font-size:14px}
@@ -122,6 +137,11 @@
       </div>
       <div id="lanes"></div>
       <div class="count" id="count"></div>
+      <div id="dial">
+        <div class="dlab">session = a gap longer than <b id="dval">30 min</b></div>
+        <div class="dtrack"><div class="dmark" id="dmark"></div></div>
+        <div class="dticks" id="dticks"></div>
+      </div>
     </div>
   </div>
 
@@ -132,7 +152,6 @@
       <div class="card"><h4>order</h4><div class="v">order</div><p>Contiguous 1..n inside each sequence. Survives the ties the clock cannot.</p></div>
       <div class="card bad"><h4>timestamp</h4><div class="v">leave it out</div><p>Whole seconds, so it ties — and a <b>time</b> argument re-sessions on a 900-second gap, overriding the unit you just passed.</p></div>
     </div>
-    <div class="note">Three students, fifteen rows, and anywhere between 3 and 6 sequences depending on where the cuts go. Nothing in the data picks for you.</div>
   </div>
 
   <p class="sr-only" id="caption" aria-live="polite">Press Start to begin.</p>
@@ -154,7 +173,7 @@
 
 <script>
 const $ = id => document.getElementById(id);
-const NSL = 8;
+const NSL = 9;
 let run = 0, paused = false, speed = 1, cur = 1, skipTo = 1, gate = false;
 
 function setBtn(t){ $("play").textContent = t; }
@@ -304,6 +323,36 @@ function keySession(r, i){
   }
   return base;
 }
+/* session keyed purely on the gap in a student's own stream, for the dial */
+function gapKeyFactory(thr){
+  const map = {};
+  for (const stu of ["1059","8161","4427"]){
+    let n = 1, prev = null;
+    for (const idx of rowsOf(stu)){
+      if (prev !== null && ROWS[idx][5] - prev > thr) n++;
+      map[idx] = stu + " #" + n;
+      prev = ROWS[idx][5];
+    }
+  }
+  return (r, i) => map[i];
+}
+const SCALE = [
+  {thr: 0,        label: "0"},
+  {thr: 2,        label: "2 min"},
+  {thr: 30,       label: "30 min"},
+  {thr: 180,      label: "3 h"},
+  {thr: 720,      label: "12 h"},
+  {thr: Infinity, label: "never"}
+];
+function buildTicks(){
+  $("dticks").innerHTML = SCALE.map(x => '<span>' + x.label + '</span>').join("");
+}
+function setDial(k){
+  $("dval").textContent = SCALE[k].thr === Infinity ? "never" : SCALE[k].label;
+  $("dmark").style.left = (k / (SCALE.length - 1) * 100) + "%";
+  $("dticks").querySelectorAll("span").forEach((el, i) => el.classList.toggle("on", i === k));
+}
+
 /* redraw the lanes for the students revealed so far, optionally pausing per student */
 async function redraw(keyFn, students, token, perStudent){
   $("lanes").innerHTML = "";
@@ -324,6 +373,7 @@ async function redraw(keyFn, students, token, perStudent){
     }
     if (perStudent && !await wait(perStudent, token)) return -1;
   }
+  $("lanes").classList.toggle("many", seen.size > 8);
   return seen.size;
 }
 const lastLanes = () => Array.from($("lanes").querySelectorAll(".lane .track"));
@@ -333,6 +383,9 @@ function reset(){
   $("lanes").innerHTML = ""; setCount(""); setChoice(null);
   $("laneHead").textContent = "Sequences";
   $("sortBy").textContent = "sorted by time";
+  $("lanes").classList.remove("many");
+  $("dial").classList.remove("on");
+  setDial(2);
   $("final").classList.remove("on");
 }
 
@@ -436,7 +489,31 @@ async function play(token){
   setChoice("chC");
   if (await redraw(keySession, ["1059","8161","4427"], token, 0) < 0) return;
   setCount('<b>6</b> sequences &nbsp;·&nbsp; actor = session');
-  if (!await wait(1500, token)) return;
+  if (!await wait(2200, token)) return;
+
+  /* ---- 9. and the 30 minutes is itself a dial ---- */
+  if (!await slide(9, token, "And the 30 minutes is a dial",
+      "Nothing makes 30 the right number. Slide the threshold and the session unit slides with it — out to the actor at one end, down to the individual events at the other.")) return;
+  setChoice(null);
+  $("laneHead").textContent = "Sessions by gap, all three students";
+  $("dial").classList.add("on");
+  const SAY = [
+    'one per event, bar the two sharing a second &nbsp;·&nbsp; almost no transitions left to count',
+    'short sittings only',
+    'the cut used in the file — the same six as before',
+    'the afternoon return still splits',
+    "8161's six-hour gap closes up",
+    'one sequence per student &nbsp;·&nbsp; the session has become the actor'
+  ];
+  for (let k = 0; k < SCALE.length; k++){
+    setDial(k);
+    if (!await wait(260, token)) return;
+    const seqs = await redraw(gapKeyFactory(SCALE[k].thr), ["1059","8161","4427"], token, 0);
+    if (seqs < 0) return;
+    setCount('<b>' + seqs + '</b> sequences &nbsp;·&nbsp; ' + SAY[k]);
+    if (!await wait(k === 0 || k === SCALE.length - 1 ? 2600 : 1800, token)) return;
+  }
+  if (!await wait(600, token)) return;
   $("final").classList.add("on");
   if (!await wait(3600, token)) return;
 
@@ -476,6 +553,8 @@ document.addEventListener("keydown", e => {
   else if (e.key === " "){ e.preventDefault(); $("play").click(); }
 });
 buildGrid();
+buildTicks();
+setDial(2);
 $("slno").textContent = "1 / " + NSL;
 </script>
 </body>

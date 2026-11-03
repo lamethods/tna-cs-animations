@@ -11,7 +11,7 @@ calls. Open it in a browser, or serve the folder and link to it from slides.
 
 | | file | what it shows |
 |---|---|---|
-| **3a** | [`3a_source_autograder.html`](3a_source_autograder.html) | **Automated assessment.** A student edits, runs and submits in an online judge. The code visibly changes, but only the runs reach the log — then the `edit` states are recovered by comparing the code each run carried. |
+| **3a** | [`3a_source_autograder.html`](3a_source_autograder.html) | **Automated assessment.** A student edits, runs and submits in an online judge. Every action is a row in the log, interleaved in the order it happened, and the sequence is read straight off it. |
 | **3b** | [`3b_source_ai_dialogue.html`](3b_source_ai_dialogue.html) | **Coded discourse.** A student debugging recursion with an AI assistant. A turn is not a state until a codebook is applied; at the end, coding only the student collapses every assistant turn to a single `AI`. |
 | **3c** | [`3c_source_observation.html`](3c_source_observation.html) | **Observation.** Screen capture and think-aloud from a pair debugging a loop. One coder draws segment boundaries; a second coder draws different ones from the same tape. |
 | **3d** | [`3d_source_sensors.html`](3d_source_sensors.html) | **Sensors.** Eye tracking over a spec, some code and a failing test. Gaze becomes states only once areas of interest are drawn and a minimum dwell is chosen — raise it and the short glances stop existing. |
@@ -55,8 +55,8 @@ carries the `actor · order · state` summary.
 The scenarios are illustrative but the shape of the data is not invented: the state
 vocabularies, the ordering traps and the sequence-unit arithmetic follow real public
 computing-education datasets. In particular 3a and 3e use an online judge that records
-runs and submissions but no edit event, which is why editing has to be recovered by
-hashing the code each run carried.
+edits alongside runs and submissions, so a sequence needs no reconstruction — only a
+decision about what counts as one.
 
 No student data of any kind appears in these files. Every name, identifier, timestamp
 and utterance is fabricated for the illustration.

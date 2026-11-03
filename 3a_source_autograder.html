@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Source 1 — automated assessment: runs, submissions, and the edits in between</title>
+<title>Source 1 — automated assessment: edits, runs and submissions</title>
 <style>
   :root{
     --ink:#1f2328; --muted:#6b7078; --line:#dfe2e6; --faint:#f5f6f7;
@@ -75,12 +75,6 @@
   .chip.on{opacity:1;transform:none}
   .chip .n{font-size:12px;color:var(--muted);font-weight:500;min-width:14px}
   .chip code{font-family:"SF Mono",Menlo,Consolas,monospace;font-size:14px}
-  .chip .hash{margin-left:auto;font-family:"SF Mono",Menlo,Consolas,monospace;font-size:11.5px;color:var(--muted);
-    opacity:0;transition:opacity .45s}
-  .chip.showh .hash{opacity:1}
-  .gapnote{font-size:12.5px;color:var(--ghost);border-left:2px dashed var(--ghost);margin-left:12px;padding:3px 0 3px 10px;
-    opacity:0;transition:opacity .45s}
-  .gapnote.on{opacity:1}
 
   /* ---- final strip ---- */
   #final{opacity:0;transition:opacity .7s;margin-top:16px}
@@ -113,7 +107,7 @@
     <div id="stepNo">1</div>
     <div>
       <div id="stepTitle">Automated assessment</div>
-      <div id="stepDesc">An online judge. The student edits, runs against their own input, and submits for grading — but only two of those three reach the log. Press Start.</div>
+      <div id="stepDesc">An online judge. The student edits, runs against their own input, and submits for grading — and all three reach the log. Press Start.</div>
     </div>
   </div>
 
@@ -145,7 +139,7 @@
     <div class="args">
       <span>actor = <b>session</b></span><span>order = <b>order</b></span><span>state = <b>run type + outcome</b></span>
     </div>
-    <div class="note" id="noteTxt">The platform never logged an edit. But it stored the code each run carried — so where two consecutive runs differ, an edit must have happened in between. That is how the <b>edit</b> states above were recovered.</div>
+    <div class="note" id="noteTxt">One row per action, interleaved in the order the actions happened, so the sequence is read straight off the log. Not every platform records editing — where only runs and submissions are stored, the edits are either reconstructed from the code each run carried, or they are simply missing.</div>
   </div>
 
   <p class="sr-only" id="caption" aria-live="polite">Press Start to begin.</p>
@@ -167,7 +161,7 @@
 
 <script>
 const $ = id => document.getElementById(id);
-const NSL = 6;
+const NSL = 5;
 let run = 0, paused = false, speed = 1, cur = 1, skipTo = 1, gate = false;
 
 function setBtn(t){ $("play").textContent = t; }
@@ -207,8 +201,7 @@ const V0 = [
   "    while i < j:",
   "        if s[i] != s[j]:",
   "            return False",
-  "        i, j = i+1, j-1",
-  "    return True"
+  "        i, j = i+1, j-1"
 ];
 let LINES = V0.slice();
 let hot = -1, fresh = -1, caretAt = -1;
@@ -250,14 +243,9 @@ async function insertLine(idx, text, token){
   return true;
 }
 function snapshot(){ return LINES.join("\n"); }
-function digest(s){            /* a short, stable, fake content hash */
-  let h = 0x811c9dc5;
-  for (let i = 0; i < s.length; i++){ h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
-  return h.toString(16).padStart(8, "0").slice(0, 6);
-}
 
 /* ================= the log ================= */
-const EVENTS = [];   /* {label, kind, code, chip} — only runs and submissions */
+const EVENTS = [];   /* {label, kind, code, chip} — edits, runs and submissions alike */
 function hitBtn(id){
   const b = $(id); b.classList.add("hit");
   setTimeout(() => b.classList.remove("hit"), 260);
@@ -277,8 +265,7 @@ async function logEvent(label, kind, token){
   const code = snapshot();
   const d = document.createElement("div");
   d.className = "chip k-" + kind;
-  d.innerHTML = '<span class="n">' + (EVENTS.length + 1) + '</span><code>' + label +
-                '</code><span class="hash">' + digest(code) + '</span>';
+  d.innerHTML = '<span class="n">' + (EVENTS.length + 1) + '</span><code>' + label + '</code>';
   $("log").appendChild(d);
   requestAnimationFrame(() => d.classList.add("on"));
   EVENTS.push({label, kind, code, chip:d});
@@ -299,85 +286,62 @@ async function play(token){
       "An online judge. The student has a first attempt at a palindrome check on screen, and two buttons.")) return;
   if (!await wait(1400, token)) return;
 
-  if (!await slide(2, token, "The student edits — and the platform does not care",
-      "Watch the code change. No save button, no edit event: none of this reaches the log.")) return;
-  if (!await ghost("keystrokes · not logged", token)) return;
-  if (!await typeOnto(2, "  # off by one?", token)) return;
-  if (!await wait(300, token)) return;
-  LINES[2] = "    while i < j:"; render();
-  if (!await ghost("deleted · not logged", token)) return;
-  if (!await wait(600, token)) return;
+  if (!await slide(2, token, "An edit — and the log has it",
+      "The function never returns True. The student adds the line, and that edit is a row in the log, like any run.")) return;
+  if (!await insertLine(6, "    return True", token)) return;
+  if (!await ghost("edit", token)) return;
+  if (!await logEvent("edit", "ed", token)) return;
+  if (!await wait(800, token)) return;
 
-  if (!await slide(3, token, "Run → the first thing the log sees",
-      "Running against their own input is recorded, with its outcome and with the code it carried.")) return;
+  if (!await slide(3, token, "Run",
+      "Running against their own input is recorded with its outcome. The index is one past the end of the string.")) return;
   hitBtn("bRun");
   if (!await wait(600, token)) return;
   con('$ python3 main.py\nkayak\n<span class="e">IndexError: string index out of range</span>');
   if (!await wait(500, token)) return;
   if (!await logEvent("test_error", "err", token)) return;
-  if (!await wait(700, token)) return;
+  if (!await wait(800, token)) return;
 
-  if (!await slide(4, token, "An edit, in the code itself",
-      "The index is one past the end. Four characters fix it — and the log records nothing at all.")) return;
+  if (!await slide(4, token, "Edit, run",
+      "Four characters fix the index. Two more rows, in the order they happened.")) return;
   if (!await typeOnto(1, " - 1", token)) return;
-  if (!await ghost("edited line 2 · not logged", token)) return;
-  if (!await wait(300, token)) return;
+  if (!await ghost("edit", token)) return;
+  if (!await logEvent("edit", "ed", token)) return;
+  if (!await wait(400, token)) return;
   hitBtn("bRun");
   if (!await wait(550, token)) return;
   con('$ python3 main.py\nkayak\n<span class="g">True</span>');
   if (!await wait(400, token)) return;
   if (!await logEvent("test_ok", "ok", token)) return;
-  if (!await wait(700, token)) return;
+  if (!await wait(800, token)) return;
 
   if (!await slide(5, token, "Submit, edit, submit",
-      "Grading runs hidden cases. A failing one sends the student back into the code — again invisibly.")) return;
+      "Grading runs hidden cases. A failing one sends the student back into the code, and the log follows them there and back.")) return;
   hitBtn("bSub");
   if (!await wait(550, token)) return;
   con('Submitting…\n<span class="e">1 of 3 cases failed: "Never odd or even" — grade 67%</span>');
   if (!await wait(500, token)) return;
   if (!await logEvent("submission_partial", "sub", token)) return;
-  if (!await wait(500, token)) return;
+  if (!await wait(600, token)) return;
   if (!await insertLine(1, '    s = s.lower().replace(" ", "")', token)) return;
-  if (!await ghost("added a line · not logged", token)) return;
-  if (!await wait(300, token)) return;
+  if (!await ghost("edit", token)) return;
+  if (!await logEvent("edit", "ed", token)) return;
+  if (!await wait(400, token)) return;
   hitBtn("bSub");
   if (!await wait(550, token)) return;
   con('Submitting…\n<span class="g">3 of 3 cases passed — grade 100%</span>');
   if (!await wait(400, token)) return;
   if (!await logEvent("submission_pass", "pass", token)) return;
-  if (!await wait(900, token)) return;
+  if (!await wait(1100, token)) return;
 
-  if (!await slide(6, token, "Recovering the edit events",
-      "The log holds four states — but it stored the code each run carried. Where two consecutive hashes differ, an edit happened.")) return;
-  $("logsub").textContent = "— with the code each run carried";
-  EVENTS.forEach(e => e.chip.classList.add("showh"));
-  if (!await wait(1500, token)) return;
-
-  /* mark the gaps where the snapshots differ */
-  for (let i = 1; i < EVENTS.length; i++){
-    if (EVENTS[i].code !== EVENTS[i-1].code){
-      const g = document.createElement("div");
-      g.className = "gapnote";
-      g.innerHTML = digest(EVENTS[i-1].code) + " ≠ " + digest(EVENTS[i].code) + " → <b>edit</b>";
-      EVENTS[i].chip.insertAdjacentElement("beforebegin", g);
-      requestAnimationFrame(() => g.classList.add("on"));
-      if (!await wait(800, token)) return;
-    }
-  }
-  if (!await wait(600, token)) return;
-
-  /* build the recovered sequence */
-  const out = [];
-  EVENTS.forEach((e, i) => {
-    if (i && e.code !== EVENTS[i-1].code) out.push(["edit", "ed", true]);
-    out.push([e.label, e.kind, false]);
-  });
-  $("seq").innerHTML = out.map(([l,k,isEdit], i) =>
+  /* the sequence is the log, row for row */
+  $("logsub").textContent = "— seven rows, nothing inferred";
+  $("seq").innerHTML = EVENTS.map((e, i) =>
     (i ? '<span class="ar">→</span>' : '') +
-    '<span class="s k-' + k + (isEdit ? " pop" : "") + '">' + l + '</span>').join("");
+    '<span class="s k-' + e.kind + (e.kind === "ed" ? " pop" : "") + '">' + e.label + '</span>').join("");
   $("final").classList.add("on");
-  $("caption").textContent = "Four logged states become six once the edits are recovered.";
-  if (!await wait(3000, token)) return;
+  $("caption").textContent = "Seven rows, read straight off the log as the sequence.";
+  if (!await wait(3400, token)) return;
 
   if ($("loop").checked){ go(1); } else { setBtn("Restart"); }
 }
